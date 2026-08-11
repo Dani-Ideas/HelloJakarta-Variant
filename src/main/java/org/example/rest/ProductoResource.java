@@ -1,6 +1,7 @@
 package org.example.rest;
 
 import jakarta.ejb.EJB;
+import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -43,7 +44,7 @@ public class ProductoResource {
     }
 
     @POST
-    public Response crear(ProductoDTO dto) {
+    public Response crear(@Valid ProductoDTO dto) {
         Producto producto = productoService.crear(ProductoMapper.toEntity(dto));
         return Response.status(Response.Status.CREATED).entity(ProductoMapper.toDTO(producto)).build();
     }

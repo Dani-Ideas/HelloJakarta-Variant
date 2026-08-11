@@ -1,6 +1,7 @@
 package org.example.rest;
 
 import jakarta.ejb.EJB;
+import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -43,7 +44,7 @@ public class FacturaResource {
     }
 
     @POST
-    public Response crear(FacturaDTO dto) {
+    public Response crear(@Valid FacturaDTO dto) {
         Factura creada = facturaService.crear(FacturaMapper.toEntity(dto));
         return Response.status(Response.Status.CREATED).entity(FacturaMapper.toDTO(creada)).build();
     }
