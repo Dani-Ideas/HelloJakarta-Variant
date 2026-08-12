@@ -11,6 +11,33 @@ proyecto real del trabajo. Nada de esto es producción.
 
 ---
 
+## 0. Arranque después de reiniciar la PC
+
+GlassFish **persiste en disco** qué apps tienes desplegadas (`domain1/applications/`), así
+que al volver a arrancar el dominio, `HelloJakarta` reaparece solo en `list-applications`
+**sin que hagas `deploy` de nuevo**. Lo único que sí hay que prender manualmente cada vez
+es la base de datos (Derby no queda persistido como "encendido"):
+
+```bash
+cd /home/robute/Documentos/codes/SanboxTEST/glassfish7/glassfish/bin
+./asadmin start-domain      # levanta el servidor + las apps ya desplegadas
+./asadmin start-database    # levanta Derby (aparte, siempre hace falta)
+```
+
+Solo vuelves a correr `asadmin deploy --force=true ...` cuando cambies y recompiles código.
+
+**Para mandarle una petición HTTP a la app** (es 100% backend, no tiene pantalla propia,
+solo responde JSON):
+
+- Navegador → sirve para `GET`: `http://localhost:8080/HelloJakarta/api/productos`
+- `curl` → el más práctico para `POST` con body desde terminal
+- Postman → cliente gráfico dedicado a probar APIs
+- Panel **Endpoints** de IntelliJ Ultimate → detecta los `@Path` automáticamente
+- Consola admin (`http://localhost:4848` → Applications) → para confirmar visualmente que
+  está desplegada
+
+---
+
 ## 1. Arquitectura del proyecto
 
 ```
