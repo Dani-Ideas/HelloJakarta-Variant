@@ -137,3 +137,50 @@ corriendo, `asadmin deploy --force=true` funcionó a la primera. Confirmado con
 
 **Moraleja para la próxima vez**: si un deploy falla por `EntityManagerFactory` cerrado, no
 insistir en loop con `undeploy`/`deploy` — ir directo a `restart-domain`.
+
+---
+
+## 8. Frontend embebido en el WAR: `index.html` cargaba, pero JS/CSS/favicon daban `404`
+
+**Contexto**: al armar la variante monolítica (frontend compilado dentro del mismo `.war`
+que el backend, ver `frontend.md`), se configuró Vite para escribir el build directo en
+`src/main/webapp/` y se desplegó bajo el context root `/HelloJakarta-variante/`.
+
+**Síntoma**: `curl http://localhost:8080/HelloJakarta-variante/` devolvía el `index.html`
+sin problema (`200 OK`), dando la falsa impresión de que todo funcionaba. Pero al revisar
+el contenido real del HTML:
+```html
+<script type="module" crossorigin src="/assets/index-D57PWcLP.js"></script>
+<link rel="stylesheet" crossorigin href="/assets/index-DZ0PbiBn.css">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+```
+Esas rutas empiezan con `/` — es decir, absolutas **desde la raíz del dominio**
+(`http://localhost:8080/assets/...`), no desde el context root del WAR
+(`http://localhost:8080/HelloJakarta-variante/assets/...`). Un navegador real habría cargado
+una página en blanco, sin estilos y sin JavaScript, pidiendo esos archivos en el lugar
+equivocado.
+
+**Diagnóstico**: `curl` a secas no detecta este tipo de bug porque solo pide el documento
+HTML, nunca sigue las referencias a `<script>`/`<link>` como haría un navegador. Se
+encontró leyendo el HTML devuelto con atención, no por un error explícito en ningún log —
+**moraleja aparte**: cuando pruebes una página con `curl`, revisa el contenido, no solo el
+código de estado HTTP.
+
+Causa raíz: Vite, por default, asume que la app se sirve desde la raíz del dominio (`/`).
+Como este WAR se despliega bajo un context root con nombre propio
+(`/HelloJakarta-variante/`, definido por el `finalName` del `pom.xml`), todas las rutas que
+Vite generó automáticamente para los assets quedaron mal.
+
+**Fix**: agregar `base: "/HelloJakarta-variante/"` en `vite.config.ts`, coincidiendo
+exactamente con el context root real del WAR. Tras recompilar (`mvn package`) y redesplegar,
+el HTML generado quedó correcto:
+```html
+<script type="module" crossorigin src="/HelloJakarta-variante/assets/index-D57PWcLP.js"></script>
+```
+Se verificó no solo el código de estado del HTML, sino pidiendo directamente la URL del
+`.js` referenciado (`200 OK`), confirmando que el archivo real carga en esa ruta.
+
+**Moraleja para la próxima vez**: si el WAR se despliega bajo un context root que no sea la
+raíz del dominio, `base` en `vite.config.ts` **siempre** tiene que coincidir con ese context
+root (que a su vez lo define el `finalName` del `pom.xml`). Si se cambia uno, hay que
+cambiar el otro.

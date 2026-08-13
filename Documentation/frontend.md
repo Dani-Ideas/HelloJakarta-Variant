@@ -1,80 +1,167 @@
-# Frontend — HelloJakarta
+# Frontend — HelloJakarta-variante
 
 Carpeta: `frontend/`. Stack: **Vite + React + TypeScript + TanStack Query + TanStack
 Table**. Consume la API REST del backend Jakarta EE (`GET /api/productos`,
-`GET /api/facturas`).
+`GET /api/facturas`, `POST`/`PUT`/`DELETE` de productos).
+
+**Esta variante es monolítica**: el frontend compilado vive *dentro* del mismo `.war` que
+el backend. Un solo artefacto, un solo `asadmin deploy`, un solo puerto. Este documento
+explica cómo quedó armado ese flujo.
 
 ---
 
 ## 1. Quién sirve qué archivo — GlassFish vs. Vite (léelo primero, es la pregunta clave)
 
-Esto es importante porque hasta ahora todo lo que hiciste corría **dentro** de GlassFish.
-El frontend **no**. Son dos mundos separados y hay que tener clarísima la frontera.
+Hay que distinguir **dos momentos distintos** en la vida de este proyecto: cuando estás
+desarrollando (`npm run dev`) y cuando ya está desplegado (`mvn package` + `asadmin
+deploy`). Se comportan distinto a propósito.
 
-### Cómo decide GlassFish qué entregar (repaso, esto ya lo tenías con el backend)
+### Cómo decide GlassFish qué entregar (repaso)
 
-Cuando despliegas el `.war`, GlassFish descomprime el archivo y lee su contenido para
-decidir, para cada URL entrante, una de dos cosas:
+Cuando despliegas el `.war`, GlassFish lo descomprime y para cada URL entrante decide una
+de dos cosas:
 
 1. **¿Es un archivo estático?** Si la URL coincide con algo que existe tal cual dentro de
-   `src/main/webapp/` (una imagen, un `.html` puesto ahí a mano), GlassFish **lo entrega
-   directo, sin tocarlo** — igual que cualquier servidor de archivos.
-2. **¿Es una URL que debe ejecutar código?** Si la URL coincide con un `@Path` de una clase
-   anotada `@Provider`/recurso JAX-RS (o un Servlet, o un JSF), GlassFish **no entrega un
-   archivo — ejecuta tu código Java**, y lo que responde es lo que ese código construya en
-   memoria (en tu caso, JSON armado por Jersey + JSON-B). Esto es "interpretar": el
-   contenido no existía como archivo antes de la petición, se genera al vuelo.
+   `src/main/webapp/` (un `.html`, un `.js`, un `.css`), GlassFish **lo entrega directo, sin
+   tocarlo** — como cualquier servidor de archivos.
+2. **¿Es una URL que debe ejecutar código?** Si coincide con un `@Path` de un recurso
+   JAX-RS, GlassFish **ejecuta tu código Java** y responde con lo que ese código construya
+   en memoria (JSON armado por Jersey + JSON-B). Esto es "interpretar": el contenido no
+   existía como archivo antes de la petición.
 
-La forma en que GlassFish sabe cuál de las dos rutas tomar es leyendo, al momento del
-deploy, las anotaciones de tus clases (`@ApplicationPath`, `@Path`) y registrando esas
-rutas en su tabla interna de despachador de URLs (el mismo mecanismo que un `web.xml`
-manual, solo que vía anotaciones en vez de XML).
+La forma en que GlassFish sabe cuál ruta tomar es leyendo, al momento del deploy, las
+anotaciones de tus clases (`@ApplicationPath`, `@Path`) y registrando esas rutas en su
+tabla interna de despachador de URLs.
 
-### Y el frontend, ¿quién lo entrega ahora mismo?
+### En esta variante, el frontend SÍ es "archivo estático" para GlassFish
 
-**GlassFish no sabe que el frontend existe.** No está desplegado ahí, no está en ningún
-`.war`, GlassFish jamás lee ni un solo archivo de la carpeta `frontend/`. Lo que está
-sirviendo esos archivos en `http://localhost:5173` es **Vite**, un proceso de Node.js
-completamente aparte, corriendo con `npm run dev`. Son dos servidores, dos puertos, dos
-procesos — el navegador es el único que "junta" ambos mundos, haciendo peticiones a los dos
-(a 5173 para la interfaz, a 8080 para los datos).
+A diferencia de la versión original (donde el frontend vivía aparte, servido por Vite en el
+puerto 5173), aquí el build de producción de React **cae directo dentro de
+`src/main/webapp/`** — así que, una vez desplegado, GlassFish trata `index.html` y los
+`.js`/`.css` generados exactamente igual que trataría cualquier imagen puesta ahí a mano:
+los entrega tal cual, sin ejecutar nada. Solo las URLs bajo `/api/...` disparan código Java.
 
 ```
-Navegador
-   │
-   ├──► http://localhost:5173  → proceso Vite (Node.js) → sirve React/TS/CSS
-   │
-   └──► http://localhost:8080/HelloJakarta/api/...  → proceso GlassFish (Java) → JSON
+Navegador → http://localhost:8080/HelloJakarta-variante/
+                │
+                ├─ /              → GlassFish entrega index.html (archivo estatico, del WAR)
+                ├─ /assets/*.js    → GlassFish entrega el JS (archivo estatico, del WAR)
+                └─ /api/productos  → GlassFish ejecuta ProductoResource (Java, JAX-RS)
 ```
 
-Por eso hizo falta el `CorsFilter` que agregamos al backend: el navegador ve dos "orígenes"
-distintos (mismo host, distinto puerto = distinto origen para las reglas de seguridad del
-navegador) y por default bloquearía que el JavaScript servido desde 5173 lea una respuesta
-que vino de 8080, a menos que el servidor de 8080 diga explícitamente "está permitido".
+**Un solo proceso, un solo puerto, un solo origen.** Por eso ya no hace falta CORS en
+producción (aunque se dejó el `CorsFilter` en el backend porque sigue siendo útil en modo
+desarrollo, ver abajo).
 
-### En producción, ¿tiene que seguir siendo así?
+### Y durante el desarrollo (`npm run dev`), ¿sigue siendo monolítico?
 
-No, hay tres caminos válidos (no implementados aquí, solo para que sepas que existen):
-
-1. **Seguir separados** (lo más común en proyectos reales): el frontend compilado
-   (`npm run build`) se sube a un hosting de archivos estáticos cualquiera (Nginx, Vercel,
-   un bucket S3, etc.) y el backend sigue siendo GlassFish, aparte. Requiere CORS siempre,
-   como ahora.
-2. **Meter el frontend compilado dentro del mismo WAR**: copiar el contenido de
-   `frontend/dist/` a `src/main/webapp/` del proyecto Java, y desplegar todo junto. Ahí
-   GlassFish sí serviría el frontend, como archivos estáticos (opción 1 de la sección
-   anterior) — y ya no haría falta CORS, porque todo vendría del mismo origen.
-3. Un servidor intermedio (reverse proxy) que junte ambos bajo un solo dominio.
+No, y **está bien que no lo sea** — durante desarrollo seguimos usando dos procesos
+separados (Vite en 5173 + GlassFish en 8080), porque Vite te da Hot Module Replacement
+(cambios instantáneos sin perder el estado de la app), algo que no tiene sentido replicar
+dentro de GlassFish. Lo que cambia frente a la versión original es que ahora Vite
+**reenvía** las llamadas a la API en vez de que el navegador le pegue directo a GlassFish
+— ver la sección de proxy más abajo. El monolito es una propiedad del **artefacto
+desplegado**, no del flujo de desarrollo.
 
 ---
 
-## 2. Estructura del proyecto
+## 2. Cómo quedó armado (las 3 piezas que lo conectan)
+
+### Pieza 1 — `vite.config.ts`
+
+```ts
+export default defineConfig({
+  plugins: [react()],
+  base: "/HelloJakarta-variante/",
+  build: {
+    outDir: "../src/main/webapp",
+    emptyOutDir: true,
+  },
+  server: {
+    proxy: {
+      "/HelloJakarta-variante/api": "http://localhost:8080",
+    },
+  },
+});
+```
+
+- **`build.outDir: "../src/main/webapp"`** → `npm run build` ya no escribe en
+  `frontend/dist/`, escribe **directo dentro del proyecto Java**, en la carpeta que
+  `maven-war-plugin` empaqueta automáticamente en el WAR. `emptyOutDir: true` limpia esa
+  carpeta antes de cada build (para no dejar archivos viejos con hashes distintos).
+- **`base: "/HelloJakarta-variante/"`** → le dice a Vite bajo qué ruta va a vivir la app
+  una vez desplegada, para que genere `<script src="/HelloJakarta-variante/assets/...">` en
+  vez de `<script src="/assets/...">`. **Esto se descubrió como bug real**: sin el `base`
+  correcto, el `index.html` cargaba bien (GlassFish sí lo encontraba), pero el JS/CSS/
+  favicon apuntaban a la raíz del dominio en vez del context root del WAR, y el navegador
+  los pedía en la URL equivocada (`404`). Tiene que coincidir siempre con el `finalName`
+  del `pom.xml` (que define el context root del WAR).
+- **`server.proxy`** → solo aplica en `npm run dev`. Cuando el código pide
+  `/HelloJakarta-variante/api/productos`, Vite intercepta esa ruta y la reenvía él mismo
+  (server-side, en Node) hacia `http://localhost:8080`, así el navegador nunca ve un origen
+  distinto — de ahí que ya no dependamos de CORS ni siquiera en desarrollo.
+
+### Pieza 2 — `api/client.ts`
+
+```ts
+const API_BASE = "/HelloJakarta-variante/api";
+```
+
+Ruta **relativa**, ya no una URL absoluta con `http://localhost:8080` hardcodeado. Funciona
+en ambos escenarios sin cambiar una línea: en `npm run dev` la resuelve el proxy de arriba;
+en producción, como el frontend vive en el mismo origen que la API, una ruta relativa
+resuelve sola al lugar correcto.
+
+### Pieza 3 — `pom.xml` (el `frontend-maven-plugin`)
+
+```xml
+<plugin>
+    <groupId>com.github.eirslett</groupId>
+    <artifactId>frontend-maven-plugin</artifactId>
+    <version>2.0.1</version>
+    <configuration>
+        <workingDirectory>frontend</workingDirectory>
+    </configuration>
+    <executions>
+        <execution>
+            <id>install node and npm</id>
+            <goals><goal>install-node-and-npm</goal></goals>
+            <configuration><nodeVersion>v20.20.2</nodeVersion></configuration>
+        </execution>
+        <execution>
+            <id>npm install</id>
+            <goals><goal>npm</goal></goals>
+            <configuration><arguments>install</arguments></configuration>
+        </execution>
+        <execution>
+            <id>npm run build</id>
+            <goals><goal>npm</goal></goals>
+            <configuration><arguments>run build</arguments></configuration>
+        </execution>
+    </executions>
+</plugin>
+```
+
+Este plugin corre **antes** de que `maven-war-plugin` empaquete el WAR (las ejecuciones de
+`frontend-maven-plugin` caen por default en la fase `generate-resources`, que ocurre antes
+de `package`). En orden: descarga su propia copia de Node/npm (no depende de lo que tengas
+instalado en el sistema, así el build es reproducible en cualquier máquina), corre
+`npm install`, corre `npm run build` (que por la Pieza 1 ya escribe directo en
+`src/main/webapp/`). Para cuando `maven-war-plugin` entra a actuar, los archivos del
+frontend ya están ahí, listos para empaquetarse junto con las clases Java compiladas.
+
+**Resultado**: `mvn package` por sí solo hace *todo* — ya no hay un paso manual de
+`npm run build` aparte.
+
+---
+
+## 3. Estructura del proyecto
 
 ```
 frontend/
-├── index.html          punto de entrada real (lo primero que carga el navegador)
+├── index.html          punto de entrada real (fuente, no el generado)
 ├── package.json         dependencias + scripts (npm run dev/build/preview)
-├── vite.config.ts       configuracion de Vite
+├── vite.config.ts       outDir, base, proxy -- ver seccion 2
 ├── tsconfig*.json       configuracion de TypeScript
 └── src/
     ├── main.tsx          arranca React, monta <App /> en el DOM
@@ -83,68 +170,72 @@ frontend/
     ├── react-table.d.ts  extension de tipos para TanStack Table
     ├── api/
     │   ├── types.ts       interfaces TS que reflejan los DTO de Java
-    │   └── client.ts       funciones fetch() hacia el backend
+    │   └── client.ts       funciones fetch() hacia el backend (ruta relativa)
     └── components/
-        ├── ProductosTable.tsx
+        ├── ProductosPanel.tsx   contenedor: fetch + mutaciones (crear/editar/eliminar)
+        ├── ProductosTable.tsx   tabla (recibe productos + callbacks via props)
+        ├── ProductoForm.tsx     formulario de creacion/edicion
         └── FacturasTable.tsx
+
+src/main/webapp/         GENERADO por `npm run build` -- no se edita a mano, se pisa
+                          completo en cada build (emptyOutDir: true)
 ```
 
-Ver `react.md` para entender `main.tsx`/`App.tsx`/los componentes, y `tanstack.md` para
-`client.ts` + la lógica de las tablas.
+Ver `react.md` para entender los componentes, y `tanstack.md` para `client.ts` + la lógica
+de las tablas y las mutaciones.
 
 ---
 
-## 3. Instalación
+## 4. Instalación
 
 ```bash
 cd frontend
 npm install
 ```
 
-Qué hace: lee `package.json`, descarga todas las dependencias (React, Vite, TanStack, etc.)
-a la carpeta `node_modules/` (no se sube a git, se regenera con este comando), y fija las
-versiones exactas instaladas en `package-lock.json`.
+Igual que siempre: descarga dependencias a `node_modules/` (no se sube a git). Este paso es
+para cuando quieres trabajar en modo desarrollo (`npm run dev`) — el build de producción vía
+Maven **no necesita que corras esto a mano**, el plugin instala su propio Node/npm y corre
+su propio `npm install`.
 
-## 4. Correr en desarrollo
+## 5. Correr en desarrollo
 
 ```bash
 npm run dev
 ```
 
-Levanta Vite en `http://localhost:5173`. Tiene **Hot Module Replacement (HMR)**: cuando
-guardas un archivo `.tsx`, el navegador actualiza solo esa parte de la página al instante,
-sin recargar todo ni perder el estado de la app. Este modo **nunca se usa en producción** —
-sirve los archivos sin minificar y con herramientas de debug activas.
+Levanta Vite en `http://localhost:5173`, con HMR. Las llamadas a la API se van por el proxy
+configurado (Pieza 1) hacia GlassFish en el 8080 — para que esto funcione, **GlassFish
+tiene que estar corriendo** (`start-domain` + `start-database`), aunque el frontend en sí lo
+sirva Vite.
 
-## 5. Compilar para producción
-
-```bash
-npm run build
-```
-
-Corre dos cosas en secuencia (mira el script en `package.json`):
-1. `tsc -b` → TypeScript revisa todo el código en busca de errores de tipos, sin generar
-   nada todavía (es un chequeo). Si hay un error de tipos, el build se detiene aquí.
-2. `vite build` → empaqueta todo (React, tus componentes, las librerías) en unos pocos
-   archivos `.js`/`.css` minificados y optimizados, dentro de `dist/`.
-
-`dist/` es el resultado final: **puro HTML/CSS/JS estático**, sin Node.js, sin build tools,
-sin nada — cualquier servidor web del planeta lo puede servir tal cual.
-
-## 6. Previsualizar el build de producción
+## 6. Build + deploy (el flujo real de esta variante)
 
 ```bash
-npm run preview
+cd /home/robute/IdeaProjects/HelloJakarta-variante
+mvn package
 ```
 
-Levanta un servidor local simple sirviendo lo que quedó en `dist/` — para confirmar que el
-build de producción funciona antes de desplegarlo de verdad (distinto del `npm run dev`,
-que sirve el código fuente sin compilar).
+Este único comando: instala Node/npm propios (solo la primera vez, después usa la copia ya
+descargada), corre `npm install` + `npm run build` (que escribe en `src/main/webapp/`), y
+empaqueta todo en `target/HelloJakarta-variante.war`.
 
-## 7. Desplegar (según el camino que elijas de la sección 1)
+Desplegar, igual que siempre:
 
-- **Estático aparte**: copiar el contenido de `dist/` a donde sea que sirva archivos
-  estáticos (Nginx, Vercel, Netlify, un bucket S3 con hosting estático, etc.).
-- **Dentro del WAR de GlassFish**: copiar `dist/*` a `src/main/webapp/` del proyecto Java,
-  volver a `mvn package`, y desplegar el WAR normal — GlassFish serviría el frontend como
-  archivos estáticos desde ahí.
+```bash
+cd /home/robute/Documentos/codes/SanboxTEST/glassfish7/glassfish/bin
+./asadmin deploy --force=true /home/robute/IdeaProjects/HelloJakarta-variante/target/HelloJakarta-variante.war
+```
+
+Resultado: `http://localhost:8080/HelloJakarta-variante/` sirve la app completa — frontend
+y API, mismo origen, un solo artefacto desplegado.
+
+## 7. Costo de esta estrategia (para que quede claro el trade-off)
+
+Cada cambio en el frontend, por chico que sea, requiere el ciclo completo:
+`mvn package` → `asadmin deploy`. No hay hot-swap de frontend sin tocar el backend, a
+diferencia de la estrategia alternativa de usar el `docroot` del dominio (que se descartó
+para esta variante, ver la conversación que dio origen a esta decisión). Para el tamaño de
+este proyecto, ese costo es insignificante (el ciclo completo toma segundos) — pero es la
+razón por la que esta estrategia no es la ideal para un frontend que cambia constantemente
+en un ambiente de alto tráfico.
