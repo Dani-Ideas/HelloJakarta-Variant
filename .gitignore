@@ -1,5 +1,9 @@
 target/
 !.mvn/wrapper/maven-wrapper.jar
+
+# Generado por `npm run build` (via frontend-maven-plugin) en cada `mvn package`.
+# No se edita a mano, no debe versionarse -- ver Documentation/frontend.md
+src/main/webapp/
 !**/src/main/**/target/
 !**/src/test/**/target/
 .kotlin
