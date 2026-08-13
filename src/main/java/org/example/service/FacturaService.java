@@ -1,22 +1,22 @@
 package org.example.service;
 
 import jakarta.ejb.Stateless;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import org.example.model.Factura;
 import org.example.model.FacturaDetalle;
 import org.example.model.Producto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
 
 @Stateless
-public class FacturaService {
+public class FacturaService extends CrudService<Factura, Long> {
 
-    @PersistenceContext(unitName = "HelloJakartaPU")
-    private EntityManager em;
+    @Override
+    protected Class<Factura> getEntityClass() {
+        return Factura.class;
+    }
 
+    @Override
     public Factura crear(Factura factura) {
         if (factura.getFecha() == null) {
             factura.setFecha(LocalDate.now());
@@ -37,14 +37,5 @@ public class FacturaService {
 
         em.persist(factura);
         return factura;
-    }
-
-    public List<Factura> listar() {
-        return em.createQuery("SELECT f FROM Factura f ORDER BY f.id", Factura.class)
-                .getResultList();
-    }
-
-    public Factura buscarPorId(Long id) {
-        return em.find(Factura.class, id);
     }
 }

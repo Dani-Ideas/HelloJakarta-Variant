@@ -133,3 +133,101 @@ section h2 {
 .estado-error {
   color: var(--color-error);
 }
+
+/* Formulario de productos */
+
+.formulario {
+  max-width: 360px;
+  margin-bottom: 1.5rem;
+  padding: 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.formulario h3 {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.85rem;
+}
+
+.campo label {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.campo input {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.campo input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.acciones-formulario {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.acciones-formulario button,
+.boton-nuevo {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 4px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.acciones-formulario button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.boton-secundario {
+  background: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-border) !important;
+}
+
+.boton-nuevo {
+  margin-bottom: 1.25rem;
+}
+
+/* Acciones dentro de las filas de la tabla */
+
+.acciones-fila {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.boton-link {
+  font: inherit;
+  font-size: 0.8rem;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.boton-peligro {
+  color: var(--color-error);
+}

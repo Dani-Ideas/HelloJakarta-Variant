@@ -46,6 +46,10 @@ org/example/
 ├── dto/        DTO                  → contrato JSON hacia el cliente (React u otro)
 ├── mapper/     Mapper               → traduce Entity <-> DTO (clases estaticas, sin estado)
 ├── service/    EJB (@Stateless)     → logica de negocio + transacciones
+│                 └── CrudService<T, ID>  → base generica: crear/listar/buscarPorId/
+│                     actualizar/eliminar. ProductoService y FacturaService heredan de
+│                     ahi y solo sobrescriben lo que es propio de su negocio (ej. el
+│                     calculo de totales en FacturaService.crear()).
 └── rest/       JAX-RS (@Path)       → expone HTTP, solo habla en DTO
 ```
 

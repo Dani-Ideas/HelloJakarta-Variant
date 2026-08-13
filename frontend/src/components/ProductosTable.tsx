@@ -1,11 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
 import {
   createColumnHelper,
   flexRender,
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { fetchProductos } from "../api/client";
 import type { ProductoDTO } from "../api/types";
 
 const formatoMoneda = new Intl.NumberFormat("es-MX", {
@@ -15,34 +13,46 @@ const formatoMoneda = new Intl.NumberFormat("es-MX", {
 
 const columnHelper = createColumnHelper<ProductoDTO>();
 
-const columns = [
-  columnHelper.accessor("nombre", { header: "Nombre" }),
-  columnHelper.accessor("sku", { header: "SKU" }),
-  columnHelper.accessor("precio", {
-    header: "Precio",
-    cell: (info) => formatoMoneda.format(info.getValue()),
-    meta: { align: "right" },
-  }),
-  columnHelper.accessor("stock", {
-    header: "Stock",
-    meta: { align: "right" },
-  }),
-];
+interface ProductosTableProps {
+  productos: ProductoDTO[];
+  onEditar: (producto: ProductoDTO) => void;
+  onEliminar: (producto: ProductoDTO) => void;
+}
 
-export function ProductosTable() {
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["productos"],
-    queryFn: fetchProductos,
-  });
+export function ProductosTable({ productos, onEditar, onEliminar }: ProductosTableProps) {
+  const columns = [
+    columnHelper.accessor("nombre", { header: "Nombre" }),
+    columnHelper.accessor("sku", { header: "SKU" }),
+    columnHelper.accessor("precio", {
+      header: "Precio",
+      cell: (info) => formatoMoneda.format(info.getValue()),
+      meta: { align: "right" },
+    }),
+    columnHelper.accessor("stock", {
+      header: "Stock",
+      meta: { align: "right" },
+    }),
+    columnHelper.display({
+      id: "acciones",
+      header: "",
+      cell: ({ row }) => (
+        <div className="acciones-fila">
+          <button className="boton-link" onClick={() => onEditar(row.original)}>
+            Editar
+          </button>
+          <button className="boton-link boton-peligro" onClick={() => onEliminar(row.original)}>
+            Eliminar
+          </button>
+        </div>
+      ),
+    }),
+  ];
 
   const table = useReactTable({
-    data: data ?? [],
+    data: productos,
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
-
-  if (isLoading) return <p className="estado">Cargando productos...</p>;
-  if (isError) return <p className="estado estado-error">Error: {(error as Error).message}</p>;
 
   return (
     <table className="tabla">

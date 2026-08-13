@@ -1,5 +1,5 @@
 import { FacturasTable } from "./components/FacturasTable";
-import { ProductosTable } from "./components/ProductosTable";
+import { ProductosPanel } from "./components/ProductosPanel";
 
 function App() {
   return (
@@ -12,7 +12,7 @@ function App() {
       <main>
         <section>
           <h2>Productos</h2>
-          <ProductosTable />
+          <ProductosPanel />
         </section>
 
         <section>
