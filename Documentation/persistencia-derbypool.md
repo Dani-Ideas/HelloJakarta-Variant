@@ -1,6 +1,6 @@
 # Desmenuzando `persistence.xml` y la cadena hasta DerbyPool
 
-Archivo real del proyecto: `src/main/resources/META-INF/persistence.xml`
+Archivo real del proyecto: `back/src/main/resources/META-INF/persistence.xml`
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>

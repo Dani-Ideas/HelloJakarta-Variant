@@ -11,7 +11,7 @@ export default defineConfig({
   build: {
     // El build de produccion cae directo dentro del WAR de Jakarta EE, para que
     // GlassFish lo sirva como parte del mismo artefacto desplegado (monolito).
-    outDir: "../src/main/webapp",
+    outDir: "../back/src/main/webapp",
     emptyOutDir: true,
   },
   server: {

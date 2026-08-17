@@ -1,8 +1,10 @@
 # Frontend — HelloJakarta-variante
 
-Carpeta: `frontend/`. Stack: **Vite + React + TypeScript + TanStack Query + TanStack
-Table**. Consume la API REST del backend Jakarta EE (`GET /api/productos`,
-`GET /api/facturas`, `POST`/`PUT`/`DELETE` de productos).
+Carpeta: `frontend/`, hermana de `back/` (todo el backend Jakarta EE vive ahí, ver
+`Documentation/glassfish.md`/`bitacora-fixes.md` para el porqué de esta separación). Stack:
+**Vite + React + TypeScript + TanStack Query + TanStack Table**. Consume la API REST del
+backend Jakarta EE (`GET /api/productos`, `GET /api/facturas`, `POST`/`PUT`/`DELETE` de
+productos).
 
 **Esta variante es monolítica**: el frontend compilado vive *dentro* del mismo `.war` que
 el backend. Un solo artefacto, un solo `asadmin deploy`, un solo puerto. Este documento
@@ -74,7 +76,7 @@ export default defineConfig({
   plugins: [react()],
   base: "/HelloJakarta-variante/",
   build: {
-    outDir: "../src/main/webapp",
+    outDir: "../back/src/main/webapp",
     emptyOutDir: true,
   },
   server: {
@@ -85,10 +87,11 @@ export default defineConfig({
 });
 ```
 
-- **`build.outDir: "../src/main/webapp"`** → `npm run build` ya no escribe en
+- **`build.outDir: "../back/src/main/webapp"`** → `npm run build` ya no escribe en
   `frontend/dist/`, escribe **directo dentro del proyecto Java**, en la carpeta que
-  `maven-war-plugin` empaqueta automáticamente en el WAR. `emptyOutDir: true` limpia esa
-  carpeta antes de cada build (para no dejar archivos viejos con hashes distintos).
+  `maven-war-plugin` empaqueta automáticamente en el WAR (`../back/...` porque `frontend/`
+  y `back/` son carpetas hermanas dentro del repo). `emptyOutDir: true` limpia esa carpeta
+  antes de cada build (para no dejar archivos viejos con hashes distintos).
 - **`base: "/HelloJakarta-variante/"`** → le dice a Vite bajo qué ruta va a vivir la app
   una vez desplegada, para que genere `<script src="/HelloJakarta-variante/assets/...">` en
   vez de `<script src="/assets/...">`. **Esto se descubrió como bug real**: sin el `base`
@@ -120,7 +123,7 @@ resuelve sola al lugar correcto.
     <artifactId>frontend-maven-plugin</artifactId>
     <version>2.0.1</version>
     <configuration>
-        <workingDirectory>frontend</workingDirectory>
+        <workingDirectory>../frontend</workingDirectory>
     </configuration>
     <executions>
         <execution>
@@ -158,28 +161,33 @@ frontend ya están ahí, listos para empaquetarse junto con las clases Java comp
 ## 3. Estructura del proyecto
 
 ```
-frontend/
-├── index.html          punto de entrada real (fuente, no el generado)
-├── package.json         dependencias + scripts (npm run dev/build/preview)
-├── vite.config.ts       outDir, base, proxy -- ver seccion 2
-├── tsconfig*.json       configuracion de TypeScript
-└── src/
-    ├── main.tsx          arranca React, monta <App /> en el DOM
-    ├── App.tsx           componente raiz, arma la pagina
-    ├── index.css         estilos (minimalistas, sin libreria de CSS)
-    ├── react-table.d.ts  extension de tipos para TanStack Table
-    ├── api/
-    │   ├── types.ts       interfaces TS que reflejan los DTO de Java
-    │   └── client.ts       funciones fetch() hacia el backend (ruta relativa)
-    └── components/
-        ├── ProductosPanel.tsx   contenedor: fetch + mutaciones (crear/editar/eliminar)
-        ├── ProductosTable.tsx   tabla (recibe productos + callbacks via props)
-        ├── ProductoForm.tsx     formulario de creacion/edicion
-        └── FacturasTable.tsx
-
-src/main/webapp/         GENERADO por `npm run build` -- no se edita a mano, se pisa
-                          completo en cada build (emptyOutDir: true)
+HelloJakarta-variante/
+├── back/                 todo el backend Jakarta EE (pom.xml, src/main/java, etc.)
+│   └── src/main/webapp/   GENERADO por `npm run build` -- no se edita a mano, se pisa
+│                          completo en cada build (emptyOutDir: true)
+└── frontend/
+    ├── index.html          punto de entrada real (fuente, no el generado)
+    ├── package.json         dependencias + scripts (npm run dev/build/preview)
+    ├── vite.config.ts       outDir, base, proxy -- ver seccion 2
+    ├── tsconfig*.json       configuracion de TypeScript
+    └── src/
+        ├── main.tsx          arranca React, monta <App /> en el DOM
+        ├── App.tsx           componente raiz, arma la pagina
+        ├── index.css         estilos (minimalistas, sin libreria de CSS)
+        ├── react-table.d.ts  extension de tipos para TanStack Table
+        ├── api/
+        │   ├── types.ts       interfaces TS que reflejan los DTO de Java
+        │   └── client.ts       funciones fetch() hacia el backend (ruta relativa)
+        └── components/
+            ├── ProductosPanel.tsx   contenedor: fetch + mutaciones (crear/editar/eliminar)
+            ├── ProductosTable.tsx   tabla (recibe productos + callbacks via props)
+            ├── ProductoForm.tsx     formulario de creacion/edicion
+            └── FacturasTable.tsx
 ```
+
+`back/` y `frontend/` son carpetas **hermanas** dentro del mismo repo — por eso las rutas
+relativas en `vite.config.ts` y en el `pom.xml` usan `../` para cruzar de una a la otra (ver
+sección 2).
 
 Ver `react.md` para entender los componentes, y `tanstack.md` para `client.ts` + la lógica
 de las tablas y las mutaciones.
@@ -212,30 +220,81 @@ sirva Vite.
 ## 6. Build + deploy (el flujo real de esta variante)
 
 ```bash
-cd /home/robute/IdeaProjects/HelloJakarta-variante
+cd /home/robute/IdeaProjects/HelloJakarta-variante/back
 mvn package
 ```
 
 Este único comando: instala Node/npm propios (solo la primera vez, después usa la copia ya
-descargada), corre `npm install` + `npm run build` (que escribe en `src/main/webapp/`), y
-empaqueta todo en `target/HelloJakarta-variante.war`.
+descargada), corre `npm install` + `npm run build` (que escribe en
+`back/src/main/webapp/`), y empaqueta todo en `back/target/HelloJakarta-variante.war`.
 
 Desplegar, igual que siempre:
 
 ```bash
 cd /home/robute/Documentos/codes/SanboxTEST/glassfish7/glassfish/bin
-./asadmin deploy --force=true /home/robute/IdeaProjects/HelloJakarta-variante/target/HelloJakarta-variante.war
+./asadmin deploy --force=true /home/robute/IdeaProjects/HelloJakarta-variante/back/target/HelloJakarta-variante.war
 ```
 
 Resultado: `http://localhost:8080/HelloJakarta-variante/` sirve la app completa — frontend
 y API, mismo origen, un solo artefacto desplegado.
 
-## 7. Costo de esta estrategia (para que quede claro el trade-off)
+**Este flujo (`mvn package` + `asadmin deploy`) es para cuando cambió el backend** (o es la
+primera vez que despliegas). Para cambios que son *solo* de frontend, existe un camino más
+rápido — sección 7.
 
-Cada cambio en el frontend, por chico que sea, requiere el ciclo completo:
-`mvn package` → `asadmin deploy`. No hay hot-swap de frontend sin tocar el backend, a
-diferencia de la estrategia alternativa de usar el `docroot` del dominio (que se descartó
-para esta variante, ver la conversación que dio origen a esta decisión). Para el tamaño de
-este proyecto, ese costo es insignificante (el ciclo completo toma segundos) — pero es la
-razón por la que esta estrategia no es la ideal para un frontend que cambia constantemente
-en un ambiente de alto tráfico.
+## 7. Hot-swap del frontend sin tocar el backend (`hot_swap_frontend.py`)
+
+Script: `back/scripts/hot_swap_frontend.py`. Resuelve un problema real: si cada cambio de
+texto en un botón te obligara a `mvn package` + `asadmin deploy` completo, en un ambiente de
+alto tráfico eso significa procesar de nuevo todo el WAR (clases Java incluidas) solo para
+cambiar unos KB de JS/CSS. Este script evita eso.
+
+### Qué hace, en orden
+
+1. **`npm audit --audit-level=high`** — chequeo de seguridad de las dependencias del
+   frontend. Si encuentra vulnerabilidades de nivel alto o superior, pregunta antes de
+   continuar (se puede saltar con `--skip-audit`).
+2. **`npm run build`** — igual que siempre, genera los archivos con hash en
+   `back/src/main/webapp/` (ver sección 2, Pieza 1).
+3. **Diff contra lo que GlassFish ya tiene sirviendo** — compara archivo por archivo (por
+   contenido, no por fecha) el build nuevo contra la carpeta **explotada** del WAR ya
+   desplegado:
+   ```
+   glassfish7/glassfish/domains/domain1/applications/HelloJakarta-variante/
+   ```
+   Esa es la copia real que GlassFish lee del disco en cada petición — no es el `.war`
+   comprimido, es la versión ya descomprimida con la que el servidor trabaja mientras corre.
+4. **Copia solo lo que cambió** — archivos nuevos se agregan, archivos distintos se
+   sobrescriben, archivos que ya no existen en el build nuevo se borran (limpia los `.js`
+   con hash viejo que Vite ya no genera). **Nunca toca `WEB-INF/` ni `META-INF/`** — esas
+   carpetas son las clases Java compiladas, se excluyen a propósito.
+
+### Por qué esto no reinicia el backend
+
+GlassFish no "carga" los archivos estáticos a memoria en el momento del deploy — los lee
+del disco en cada petición, igual que cualquier servidor de archivos. Sobrescribir esos
+archivos mientras GlassFish sigue corriendo es exactamente igual, desde la perspectiva del
+servidor, a que tú edites una imagen en el docroot de cualquier hosting: el próximo request
+simplemente encuentra contenido distinto. Las clases Java (`WEB-INF/classes`) sí están
+cargadas en memoria por la JVM — por eso esas nunca se tocan aquí; si cambiaras una clase
+Java así sin pasar por deploy, GlassFish seguiría ejecutando la versión vieja en memoria.
+
+### Uso
+
+```bash
+cd /home/robute/IdeaProjects/HelloJakarta-variante
+python3 back/scripts/hot_swap_frontend.py
+```
+
+Verificado en la práctica: se cambió un texto en `App.tsx`, se corrió el script, y
+`curl http://localhost:8080/HelloJakarta-variante/` reflejó el cambio de inmediato — sin
+ejecutar `asadmin deploy` ni una sola vez, y con la API (`/api/productos`) respondiendo sin
+interrupción durante todo el proceso.
+
+### Trade-off que sigue existiendo
+
+Este script asume que **ya desplegaste el WAR al menos una vez** con el flujo normal
+(sección 6) — necesita que exista la carpeta explotada para poder compararla. Y si el
+cambio real es en el **backend** (una clase Java, el `pom.xml`, `persistence.xml`, etc.),
+este script no sirve — ahí sí hace falta el ciclo completo de `mvn package` +
+`asadmin deploy`, porque las clases Java sí requieren que el classloader las recargue.

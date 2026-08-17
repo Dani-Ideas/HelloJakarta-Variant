@@ -26,11 +26,14 @@ cd /home/robute/Documentos/codes/SanboxTEST/glassfish7/glassfish/bin
 
 Solo vuelves a correr `asadmin deploy --force=true ...` cuando cambies y recompiles código.
 
-**Para mandarle una petición HTTP a la app** (es 100% backend, no tiene pantalla propia,
-solo responde JSON):
+**Nota de esta variante**: a diferencia del proyecto original (100% backend, sin pantalla
+propia), aquí el WAR también trae el frontend embebido — ver `Documentation/frontend.md`.
+`http://localhost:8080/HelloJakarta-variante/` abre la app en el navegador directamente.
 
-- Navegador → sirve para `GET`: `http://localhost:8080/HelloJakarta/api/productos`
-- `curl` → el más práctico para `POST` con body desde terminal
+**Para mandarle una petición HTTP a la API** (sigue siendo JSON puro bajo `/api/...`):
+
+- Navegador → sirve para `GET`: `http://localhost:8080/HelloJakarta-variante/api/productos`
+- `curl` → el más práctico para `POST`/`PUT`/`DELETE` con body desde terminal
 - Postman → cliente gráfico dedicado a probar APIs
 - Panel **Endpoints** de IntelliJ Ultimate → detecta los `@Path` automáticamente
 - Consola admin (`http://localhost:4848` → Applications) → para confirmar visualmente que
@@ -39,6 +42,9 @@ solo responde JSON):
 ---
 
 ## 1. Arquitectura del proyecto
+
+Todo lo de abajo vive bajo `back/src/main/java/` (el backend es una carpeta hermana de
+`frontend/` — ver `Documentation/frontend.md` sección 3 para el árbol completo del repo).
 
 ```
 org/example/
@@ -105,7 +111,8 @@ cd /home/robute/Documentos/codes/SanboxTEST/glassfish7/glassfish/bin
 | `./asadmin get "resources.jdbc-connection-pool.DerbyPool.property.*"` | Ver host/puerto/usuario/BD real del pool |
 
 **URLs útiles:**
-- App: `http://localhost:8080/HelloJakarta/api/...`
+- App (frontend + API): `http://localhost:8080/HelloJakarta-variante/`
+- Solo API: `http://localhost:8080/HelloJakarta-variante/api/...`
 - Consola admin: `http://localhost:4848`
 - Log en vivo: `tail -f ../domains/domain1/logs/server.log`
 
@@ -238,6 +245,9 @@ public class ProductoDTO {
 
 ### Maven falla
 
+**Ojo con la ubicación**: en esta variante `pom.xml` vive en `back/`, no en la raíz del
+repo — todos los comandos `mvn` de aquí abajo asumen que estás parado en `back/`.
+
 1. `mvn clean package` primero — descarta artefactos viejos corruptos.
 2. `mvn -X package` para log verboso si el error no es claro.
 3. Errores típicos que ya nos pasaron en este proyecto:
@@ -247,6 +257,9 @@ public class ProductoDTO {
      nombre del plugin, ej. `maven-war-plugin`) → build tronado buscando un plugin que no existe.
    - **`mvn -o` (modo offline) falla** con "Cannot access central" → simplemente corre sin
      `-o`, necesita bajar algo que no está en caché local.
+   - **En esta variante, esto aplica todavía más**: el `frontend-maven-plugin` descarga su
+     propio Node.js y corre `npm install` como parte del `mvn package` — la primera vez
+     necesita internet sí o sí, sin importar el caché de Maven. Ver `Documentation/frontend.md`.
 4. `mvn dependency:tree` → para ver conflictos de versiones entre dependencias.
 5. Si una dependencia de Jakarta no resuelve: confirma `groupId=jakarta.*` (no `javax.*`,
    esa es la API vieja) y que la versión corresponda a la spec pedida (`10.0.0` para EE 10).
@@ -284,7 +297,9 @@ Alternativa visual (más cómoda): en IntelliJ Ultimate, **View → Tool Windows
 ### Debugging en IntelliJ
 
 1. **Run → Edit Configurations → + → GlassFish Server → Local**, selecciona el artifact
-   `HelloJakarta:war` para desplegar.
+   `HelloJakarta-variante:war` para desplegar (IntelliJ va a necesitar reimportar el módulo
+   Maven desde `back/pom.xml` tras la reestructuración a carpetas — si no lo detecta solo,
+   click derecho en `back/pom.xml` → "Add as Maven Project").
 2. Pon breakpoints haciendo clic en el margen izquierdo de la línea de código.
 3. Corre con el ícono de **Debug** (el bicho 🐛), no con Run — así IntelliJ se conecta al
    puerto de depuración (JPDA) que GlassFish expone.

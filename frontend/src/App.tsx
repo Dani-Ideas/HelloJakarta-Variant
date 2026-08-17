@@ -6,7 +6,7 @@ function App() {
     <div className="pagina">
       <header className="encabezado">
         <h1>HelloJakarta</h1>
-        <p className="subtitulo">Panel de práctica — Jakarta EE 10 + TanStack</p>
+        <p className="subtitulo">Panel de práctica — Jakarta EE 10 + TanStack (hot-swap probado)</p>
       </header>
 
       <main>
