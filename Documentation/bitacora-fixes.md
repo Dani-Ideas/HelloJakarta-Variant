@@ -184,3 +184,78 @@ Se verificó no solo el código de estado del HTML, sino pidiendo directamente l
 raíz del dominio, `base` en `vite.config.ts` **siempre** tiene que coincidir con ese context
 root (que a su vez lo define el `finalName` del `pom.xml`). Si se cambia uno, hay que
 cambiar el otro.
+
+---
+
+## 9. Rutas de TanStack Router dan `404` al pedirlas directo (F5, o escribir la URL a mano)
+
+**Contexto**: se agregó navegación con TanStack Router (`/`, `/productos`, `/facturas`) —
+ver `tanstack.md`, Parte 3. Esas URLs solo existen en el navegador, nunca como archivos
+reales dentro del WAR.
+
+**Síntoma**: navegar haciendo clic en los links del menú funcionaba perfecto. Pero pedir
+`http://localhost:8080/HelloJakarta-variante/productos` **directo** (escribiéndolo en la
+barra, o dando F5 estando parado ahí) daba `404` — porque GlassFish solo tiene
+`index.html`, `/assets/*` y `/api/*` como recursos reales; `/productos` no es ninguno de
+esos.
+
+**Diagnóstico**: es un problema clásico de cualquier SPA con rutas del lado del cliente
+(no específico de GlassFish ni de TanStack) — el servidor no sabe que `/productos` es
+"válido" porque esa validez la decide JavaScript, no el servidor.
+
+**Fix**: agregar un `web.xml` con:
+```xml
+<error-page>
+    <error-code>404</error-code>
+    <location>/index.html</location>
+</error-page>
+```
+Cualquier `404` cae de vuelta a `index.html`; ahí React + el router arrancan de nuevo y
+leen la URL actual para mostrar la página correcta.
+
+**Detalle importante de dónde vive ese `web.xml`**: no se puso dentro de
+`src/main/webapp/`, porque esa carpeta la borra y regenera completa `npm run build`
+(`emptyOutDir: true`) en cada `mvn package` — se habría perdido. Se puso en
+`back/src/main/webxml/web.xml` (carpeta aparte, no tocada por Vite), y se le dijo a
+`maven-war-plugin` dónde encontrarlo:
+```xml
+<webXml>${project.basedir}/src/main/webxml/web.xml</webXml>
+```
+
+**Error repetido durante este fix** (dos veces, en dos archivos distintos): volví a poner
+`--` dentro de un comentario XML (una vez en `pom.xml`, otra vez dentro del propio
+`web.xml`) — XML no permite `--` en ningún lado de un comentario, solo al cerrarlo con
+`-->`. Mismo error que ya había pasado antes con el `frontend-maven-plugin` (ver
+`frontend.md`). **Moraleja que claramente necesito grabarme**: nunca usar `--` como guión
+largo dentro de un comentario XML — usar coma o punto y aparte en su lugar.
+
+**Verificación** (con el WAR ya desplegado):
+```bash
+# Home normal
+curl -s -o /dev/null -w "status:%{http_code}\n" http://localhost:8080/HelloJakarta-variante/
+# → status:200
+
+# Caso duro: pedir /productos DIRECTO, sin haber navegado ahi por los links
+curl -s -o /dev/null -w "status:%{http_code}\n" http://localhost:8080/HelloJakarta-variante/productos
+# → status:404 (esperado -- el error-page preserva el codigo 404 original)
+
+# Pero el CONTENIDO que llega es el index.html real, no una pagina de error generica:
+curl -s http://localhost:8080/HelloJakarta-variante/productos | grep -E "title|script"
+# → <title>HelloJakarta</title>
+# → <script type="module" crossorigin src="/HelloJakarta-variante/assets/index-....js">
+
+# Y ese script SI existe y carga:
+curl -s -o /dev/null -w "status:%{http_code}\n" http://localhost:8080/HelloJakarta-variante/assets/index-....js
+# → status:200
+
+# La API no se vio afectada por nada de esto:
+curl -s -o /dev/null -w "status:%{http_code}\n" http://localhost:8080/HelloJakarta-variante/api/productos
+# → status:200
+```
+
+**Por qué el `404` en el status no es un problema real**: el navegador renderiza el `body`
+de la respuesta sin importar el código de estado (mientras el `Content-Type` sea HTML) —
+para la persona usando la app, la página carga normal, el JavaScript arranca, y TanStack
+Router lee la URL actual y muestra `ProductosPage` correctamente. El `404` solo importa
+para herramientas que sí revisan el código de estado (crawlers de buscadores, monitoreo) —
+irrelevante para este proyecto de práctica.

@@ -163,16 +163,23 @@ frontend ya están ahí, listos para empaquetarse junto con las clases Java comp
 ```
 HelloJakarta-variante/
 ├── back/                 todo el backend Jakarta EE (pom.xml, src/main/java, etc.)
-│   └── src/main/webapp/   GENERADO por `npm run build` -- no se edita a mano, se pisa
-│                          completo en cada build (emptyOutDir: true)
+│   ├── src/main/webapp/   GENERADO por `npm run build` -- no se edita a mano, se pisa
+│   │                      completo en cada build (emptyOutDir: true)
+│   └── src/main/webxml/   web.xml a mano -- FUERA de webapp/ a proposito, para que
+│                          sobreviva el emptyOutDir (ver bitacora-fixes.md, incidente 9)
 └── frontend/
     ├── index.html          punto de entrada real (fuente, no el generado)
     ├── package.json         dependencias + scripts (npm run dev/build/preview)
     ├── vite.config.ts       outDir, base, proxy -- ver seccion 2
     ├── tsconfig*.json       configuracion de TypeScript
     └── src/
-        ├── main.tsx          arranca React, monta <App /> en el DOM
-        ├── App.tsx           componente raiz, arma la pagina
+        ├── main.tsx          arranca React + router, monta <RouterProvider/> en el DOM
+        ├── router.tsx         el "mapa" de rutas -- ver tanstack.md, Parte 3
+        ├── routes/
+        │   ├── RootLayout.tsx    marco fijo (header + nav), envuelve TODAS las paginas
+        │   ├── HomePage.tsx       pagina de "/"
+        │   ├── ProductosPage.tsx  pagina de "/productos" (envuelve ProductosPanel)
+        │   └── FacturasPage.tsx   pagina de "/facturas" (envuelve FacturasTable)
         ├── index.css         estilos (minimalistas, sin libreria de CSS)
         ├── react-table.d.ts  extension de tipos para TanStack Table
         ├── api/
@@ -188,6 +195,10 @@ HelloJakarta-variante/
 `back/` y `frontend/` son carpetas **hermanas** dentro del mismo repo — por eso las rutas
 relativas en `vite.config.ts` y en el `pom.xml` usan `../` para cruzar de una a la otra (ver
 sección 2).
+
+**Nota**: `App.tsx` ya no existe — su función (armar el layout con header + secciones) la
+reparten ahora `RootLayout.tsx` (el marco fijo) y las páginas individuales en `routes/`,
+desde que se agregó navegación con TanStack Router.
 
 Ver `react.md` para entender los componentes, y `tanstack.md` para `client.ts` + la lógica
 de las tablas y las mutaciones.

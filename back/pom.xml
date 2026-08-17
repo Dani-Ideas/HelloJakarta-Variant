@@ -78,6 +78,10 @@
                 <version>3.4.0</version>
                 <configuration>
                     <failOnMissingWebXml>false</failOnMissingWebXml>
+                    <!-- web.xml vive fuera de src/main/webapp/ a proposito. Esa carpeta
+                         la borra y regenera completa el build del frontend en cada
+                         "npm run build" (emptyOutDir: true), y se perderia. -->
+                    <webXml>${project.basedir}/src/main/webxml/web.xml</webXml>
                 </configuration>
             </plugin>
         </plugins>

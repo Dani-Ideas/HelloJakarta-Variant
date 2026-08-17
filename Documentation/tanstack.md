@@ -1,7 +1,7 @@
 # TanStack — solo lo que se usa en este proyecto
 
-Dos librerías distintas de la familia TanStack, cada una resolviendo un problema distinto.
-Ninguna trae estilos visuales — ambas son "headless" (sin cabeza, sin apariencia propia):
+Tres librerías distintas de la familia TanStack, cada una resolviendo un problema distinto.
+Ninguna trae estilos visuales — todas son "headless" (sin cabeza, sin apariencia propia):
 te dan la lógica y el estado, tú pones el JSX/CSS. Por eso el `index.css` que armamos es
 100% nuestro.
 
@@ -23,7 +23,7 @@ resultados (si dos componentes piden lo mismo, solo se hace una petición real).
 const queryClient = new QueryClient();
 
 <QueryClientProvider client={queryClient}>
-  <App />
+  <RouterProvider router={router} />
 </QueryClientProvider>
 ```
 
@@ -166,3 +166,92 @@ const table = useReactTable({
 - `row.getIsExpanded()` → `true`/`false`, se usa tanto para decidir qué símbolo mostrar en
   el botón (`+` o `−`) como para decidir si se pinta la fila extra con el detalle de la
   factura debajo.
+
+---
+
+## Parte 3 — TanStack Router (`@tanstack/react-router`, v1)
+
+### Qué problema resuelve
+
+En una app tradicional (sin JavaScript de por medio), cada link que clicas le pide una
+página HTML completa nueva al servidor — el navegador tira todo lo que tenía cargado y
+reconstruye desde cero (por eso el "parpadeo" en blanco entre página y página). Con React,
+todo el JavaScript ya está cargado en el navegador desde el principio — "navegar" a otra
+página no debería significar pedirle nada nuevo al servidor, solo cambiar qué se muestra.
+TanStack Router es quien se encarga de: mantener la URL de la barra de direcciones
+sincronizada con qué componente se ve, sin recargar nada.
+
+### El árbol de rutas — `router.tsx`
+
+```tsx
+const rootRoute = createRootRoute({ component: RootLayout });
+
+const productosRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/productos",
+  component: ProductosPage,
+});
+
+const routeTree = rootRoute.addChildren([indexRoute, productosRoute, facturasRoute]);
+
+export const router = createRouter({ routeTree, basepath: "/HelloJakarta-variante" });
+```
+
+- **`createRootRoute`** → la ruta que se renderiza siempre, sin importar la URL. Su
+  `component` (`RootLayout`) trae el `<Outlet/>` — el "hueco" donde se inserta la página
+  activa.
+- **`createRoute`** → una página concreta. `getParentRoute` dice de quién "cuelga" en el
+  árbol; `path` es la URL; `component` es qué se muestra ahí.
+- **`routeTree`** → junta todas las rutas sueltas en una sola estructura, la que
+  `createRouter` necesita para saber qué existe.
+- **`basepath`** → igual que el `base` de Vite (ver `frontend.md`), le dice al router bajo
+  qué ruta real vive el WAR (`/HelloJakarta-variante/`), para que los links que genera
+  apunten al lugar correcto. Mismo problema que los assets, misma solución.
+
+### `<Outlet/>` (`routes/RootLayout.tsx`)
+
+```tsx
+<main>
+  <Outlet />
+</main>
+```
+
+Literalmente "aquí va la página que corresponda". `RootLayout` se dibuja una sola vez (el
+header, el `<nav>`) y `Outlet` es lo único que cambia cuando cambias de página.
+
+### `<Link>` (no confundir con un `<a>` normal)
+
+```tsx
+<Link to="/productos" activeProps={{ className: "nav-activo" }}>
+  Productos
+</Link>
+```
+
+- `to="/productos"` — **sin** el `basepath`, el router lo agrega solo al armar el `href`
+  real.
+- Intercepta el clic: en vez de dejar que el navegador recargue, actualiza la URL (con el
+  History API del navegador) y le avisa al router que muestre otro `component` en el
+  `Outlet`.
+- `activeProps` → props extra (aquí, una clase CSS) que se aplican automáticamente **solo**
+  cuando la URL actual coincide con ese link — así se ve resaltado el ítem del menú en el
+  que estás parado.
+- `activeOptions={{ exact: true }}` (usado solo en el link de "/") — sin esto, como toda URL
+  empieza con `/`, ese link se marcaría "activo" incluso estando en `/productos`.
+
+### `RouterProvider` (`main.tsx`)
+
+```tsx
+<RouterProvider router={router} />
+```
+
+Reemplaza lo que antes era `<App />` renderizado directo — ahora quien decide qué mostrar es
+el router, leyendo la URL actual contra el árbol de `router.tsx`.
+
+### El problema que esto introduce, y cómo se resolvió (`web.xml`)
+
+Como `/productos` y `/facturas` **nunca existen como archivos reales** (son puro
+JavaScript decidiendo qué mostrar), si alguien pide esa URL **directo** al servidor
+(escribiéndola a mano, o dando F5 estando ahí), GlassFish no tiene nada que entregarle —
+404. Se resolvió con un `error-page` en `web.xml` que redirige cualquier `404` de vuelta a
+`index.html`; ahí React y el router arrancan de nuevo y leen la URL actual para mostrar la
+página correcta. Detalle técnico completo, con pruebas, en `bitacora-fixes.md` (incidente 9).
