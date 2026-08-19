@@ -14,14 +14,15 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.example.dto.ProductoDTO;
-import org.example.mapper.ProductoMapper;
-import org.example.model.Producto;
-import org.example.service.ProductoService;
+import org.example.lib.ProductoService;
 
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
+// El Resource ya NO mapea Entity<->DTO -- eso ahora vive en ProductoServiceImpl. Aqui
+// solo se traducen llamadas HTTP a llamadas de metodo, y resultados de metodo a
+// respuestas HTTP (codigos de estado). Tambien inyecta la INTERFAZ (org.example.lib),
+// nunca ProductoServiceImpl directamente.
 @Path("/productos")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -32,35 +33,33 @@ public class ProductoResource {
 
     @GET
     public List<ProductoDTO> listar() {
-        return productoService.listar().stream()
-                .map(ProductoMapper::toDTO)
-                .collect(Collectors.toList());
+        return productoService.listar();
     }
 
     @GET
     @Path("/{id}")
     public Response buscar(@PathParam("id") Long id) {
-        Producto producto = productoService.buscarPorId(id);
-        if (producto == null) {
+        ProductoDTO dto = productoService.buscarPorId(id);
+        if (dto == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        return Response.ok(ProductoMapper.toDTO(producto)).build();
+        return Response.ok(dto).build();
     }
 
     @POST
     public Response crear(@Valid ProductoDTO dto) {
-        Producto producto = productoService.crear(ProductoMapper.toEntity(dto));
-        return Response.status(Response.Status.CREATED).entity(ProductoMapper.toDTO(producto)).build();
+        ProductoDTO creado = productoService.crear(dto);
+        return Response.status(Response.Status.CREATED).entity(creado).build();
     }
 
     @PUT
     @Path("/{id}")
     public Response actualizar(@PathParam("id") Long id, @Valid ProductoDTO dto) {
-        Producto producto = productoService.actualizar(id, ProductoMapper.toEntity(dto));
-        if (producto == null) {
+        ProductoDTO actualizado = productoService.actualizar(id, dto);
+        if (actualizado == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        return Response.ok(ProductoMapper.toDTO(producto)).build();
+        return Response.ok(actualizado).build();
     }
 
     @DELETE

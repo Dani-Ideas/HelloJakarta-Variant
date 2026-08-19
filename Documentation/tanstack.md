@@ -247,11 +247,15 @@ header, el `<nav>`) y `Outlet` es lo único que cambia cuando cambias de página
 Reemplaza lo que antes era `<App />` renderizado directo — ahora quien decide qué mostrar es
 el router, leyendo la URL actual contra el árbol de `router.tsx`.
 
-### El problema que esto introduce, y cómo se resolvió (`web.xml`)
+### El problema que esto introduce, y cómo se resolvió (`SpaFallbackFilter`)
 
 Como `/productos` y `/facturas` **nunca existen como archivos reales** (son puro
 JavaScript decidiendo qué mostrar), si alguien pide esa URL **directo** al servidor
 (escribiéndola a mano, o dando F5 estando ahí), GlassFish no tiene nada que entregarle —
-404. Se resolvió con un `error-page` en `web.xml` que redirige cualquier `404` de vuelta a
-`index.html`; ahí React y el router arrancan de nuevo y leen la URL actual para mostrar la
-página correcta. Detalle técnico completo, con pruebas, en `bitacora-fixes.md` (incidente 9).
+404. Se resuelve con un filtro Java (`rest/SpaFallbackFilter.java`, `@WebFilter("/*")`)
+que reenvía a `index.html` **solo** cuando la ruta no es `/api/*` y no corresponde a un
+archivo real — así React y el router arrancan de nuevo y leen la URL actual para mostrar la
+página correcta, sin interferir con los `404` reales de la API (el intento inicial usaba un
+`error-page` en `web.xml`, pero eso interceptaba TAMBIÉN los `404` legítimos de la API,
+rompiendo `PUT`/`DELETE`). Detalle técnico completo, con los dos bugs y sus causas reales,
+en `bitacora-fixes.md` (incidentes 9 y 10).

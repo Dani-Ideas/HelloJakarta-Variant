@@ -48,16 +48,31 @@ Todo lo de abajo vive bajo `back/src/main/java/` (el backend es una carpeta herm
 
 ```
 org/example/
-├── model/      Entity (JPA)         → mapea tablas: Producto, Factura, FacturaDetalle
-├── dto/        DTO                  → contrato JSON hacia el cliente (React u otro)
-├── mapper/     Mapper               → traduce Entity <-> DTO (clases estaticas, sin estado)
-├── service/    EJB (@Stateless)     → logica de negocio + transacciones
-│                 └── CrudService<T, ID>  → base generica: crear/listar/buscarPorId/
-│                     actualizar/eliminar. ProductoService y FacturaService heredan de
-│                     ahi y solo sobrescriben lo que es propio de su negocio (ej. el
-│                     calculo de totales en FacturaService.crear()).
-└── rest/       JAX-RS (@Path)       → expone HTTP, solo habla en DTO
+├── model/   Entity (JPA)              → mapea tablas: Producto, Factura, FacturaDetalle
+├── dto/     DTO                       → contrato JSON hacia el cliente (React u otro)
+├── mapper/  Mapper                    → traduce Entity <-> DTO (clases estaticas, sin estado)
+├── lib/     INTERFACES (contratos)    → Repository<T,ID>, Service<D,ID>, y las especificas
+│              de cada entidad (ProductoRepository, ProductoService, FacturaRepository,
+│              FacturaService). Nadie fuera de ejb/ conoce las clases concretas.
+└── ejb/     IMPLEMENTACIONES (@Stateless/@Singleton)
+               ├── AbstractRepository<T,ID>  → logica JPA compartida (crear/listar/
+               │     buscarPorId/eliminar), heredada por *RepositoryImpl
+               ├── ProductoRepositoryImpl, FacturaRepositoryImpl → EntityManager aqui,
+               │     nada de logica de negocio (solo persistir lo que se les pase)
+               ├── ProductoServiceImpl, FacturaServiceImpl → logica de negocio +
+               │     conversion Entity<->DTO (via Mapper) + transacciones
+               └── DatosIniciales (@Singleton @Startup) → siembra productos de ejemplo
+rest/        JAX-RS (@Path)            → expone HTTP, solo habla en DTO, inyecta las
+               interfaces de lib/ (nunca las clases de ejb/ directamente)
 ```
+
+**Por qué interfaz + implementación separadas** (patrón Repository, con inyección
+polimórfica): cualquier bean que necesite un repositorio o servicio inyecta la **interfaz**
+(`@EJB private ProductoRepository productoRepository;`, tipo de `lib`) — nunca conoce
+`ProductoRepositoryImpl` (la clase real, en `ejb`). GlassFish resuelve solo cuál
+implementación concreta usar. Esto es lo mismo que ya viste con `CrudService`
+(evitar repetir código entre entidades), pero ahora armado con interfaz + implementación
+en vez de solo herencia — así es como lo hacen en proyectos reales de Jakarta EE.
 
 Flujo de una petición (`POST /api/facturas`):
 
@@ -68,13 +83,16 @@ HTTP request
 JAX-RS (Jersey)  ──deserializa JSON──▶  FacturaDTO
    │
    ▼
-FacturaResource.crear(dto)
-   │  FacturaMapper.toEntity(dto) → Factura + FacturaDetalle
+FacturaResource.crear(dto)              [inyecta lib.FacturaService]
+   │
    ▼
-FacturaService.crear(factura)   [EJB @Stateless]
+FacturaServiceImpl.crear(dto)           [ejb, @Stateless — logica de negocio]
+   │  FacturaMapper.toEntity(dto) → Factura + FacturaDetalle
+   │  productoRepository.buscarPorId(id) → precio REAL, recalculado en servidor
    │  el contenedor abre la transaccion JTA automaticamente
-   │  em.find(Producto.class, id) → SELECT real, precio recalculado en servidor
-   │  em.persist(factura)          → INSERT en commit
+   ▼
+facturaRepository.crear(factura)        [ejb, @Stateless — solo datos]
+   │  em.persist(factura) → INSERT en commit (cascada a FacturaDetalle)
    ▼
 Derby (jdbc/__default → DerbyPool)
    │
@@ -82,8 +100,10 @@ Derby (jdbc/__default → DerbyPool)
 FacturaMapper.toDTO(creada) → JSON de respuesta (201 Created)
 ```
 
-Regla de oro: **el Resource nunca deja salir una Entity directamente**, siempre pasa por
-el Mapper. El Service nunca sabe nada de HTTP. El Resource nunca sabe nada de SQL.
+Reglas de oro: **el Resource nunca deja salir una Entity directamente**, siempre pasa por
+el Mapper (ahora eso pasa dentro del Service, no del Resource). El Repository nunca sabe
+nada de negocio (solo persiste). El Service nunca sabe nada de HTTP. Todo el mundo inyecta
+interfaces (`lib`), nunca implementaciones concretas (`ejb`).
 
 ---
 
@@ -149,8 +169,15 @@ public class Producto {
 ### Jakarta Enterprise Beans (EJB)
 
 ```java
+// lib/ProductoService.java -- el contrato, lo que TODOS inyectan
+public interface ProductoService extends Service<ProductoDTO, Long> {
+    ProductoDTO actualizar(Long id, ProductoDTO dto);
+    boolean eliminar(Long id);
+}
+
+// ejb/ProductoServiceImpl.java -- la implementacion real, nadie fuera de ejb/ la conoce
 @Stateless                 // instancia pooled, sin estado entre llamadas
-public class ProductoService { ... }
+public class ProductoServiceImpl implements ProductoService { ... }
 
 @Singleton @Startup        // una sola instancia, se crea al arrancar la app
 public class DatosIniciales {
@@ -159,9 +186,45 @@ public class DatosIniciales {
 }
 ```
 
-- `@EJB private ProductoService productoService;` → inyección en otro EJB o en un Resource JAX-RS
+- `@EJB private ProductoService productoService;` → inyección **de la interfaz**, en otro
+  EJB o en un Resource JAX-RS. GlassFish resuelve solo cuál es la única implementación
+  disponible (`ProductoServiceImpl`) — esto es lo que permite polimorfismo real: el que
+  inyecta nunca depende de la clase concreta.
 - Transacciones: por default son **CMT** (Container-Managed) con `REQUIRED` — el contenedor
-  abre/cierra/rollbackea la transacción solo, no hace falta código manual.
+  abre/cierra/rollbackea la transacción solo, no hace falta código manual. Cuando un
+  `ServiceImpl` llama a un `RepositoryImpl` (otro EJB), la llamada **se une a la misma
+  transacción** que ya estaba abierta — no abre una nueva.
+
+### Patrón Repository (no es parte del estándar Jakarta EE, es una convención de diseño)
+
+Separa "cómo se guardan/leen los datos" (Repository) de "qué hacer con esos datos"
+(Service). El `Repository` nunca decide nada de negocio — solo sabe hablar con la base:
+
+```java
+// lib/Repository.java -- contrato generico compartido por cualquier entidad
+public interface Repository<T, ID> {
+    T crear(T entidad);
+    List<T> listar();
+    T buscarPorId(ID id);
+    boolean eliminar(ID id);
+}
+
+// ejb/AbstractRepository.java -- implementacion compartida (EntityManager, JPQL generico)
+public abstract class AbstractRepository<T, ID> implements Repository<T, ID> {
+    @PersistenceContext(unitName = "HelloJakartaPU")
+    protected EntityManager em;
+    // ...
+}
+
+// ejb/ProductoRepositoryImpl.java -- el unico que sabe que es "Producto" especificamente
+@Stateless
+public class ProductoRepositoryImpl extends AbstractRepository<Producto, Long>
+        implements ProductoRepository { ... }
+```
+
+El `Service` (capa de negocio) inyecta el `Repository` **por interfaz**, nunca la clase
+concreta — así el Service ni se entera de si por debajo hay JPA, otra base de datos, o
+incluso datos de prueba en memoria (útil, entre otras cosas, para tests).
 
 ### Jakarta RESTful Web Services (JAX-RS)
 

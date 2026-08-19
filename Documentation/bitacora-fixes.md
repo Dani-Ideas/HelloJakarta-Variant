@@ -259,3 +259,76 @@ para la persona usando la app, la página carga normal, el JavaScript arranca, y
 Router lee la URL actual y muestra `ProductosPage` correctamente. El `404` solo importa
 para herramientas que sí revisan el código de estado (crawlers de buscadores, monitoreo) —
 irrelevante para este proyecto de práctica.
+
+---
+
+## 10. Reestructuración a Repository Pattern (`lib`/`ejb`): dos bugs reales, dos causas distintas
+
+**Contexto**: se reestructuró todo el backend de `service/` (herencia directa,
+`CrudService`) a `lib/` (interfaces) + `ejb/` (implementaciones), con una capa `Repository`
+nueva entre `Service` y `EntityManager` — ver `DOCUMENTATION.md` sección 1. Al probar el
+CRUD completo después del cambio, aparecieron dos bugs.
+
+### Bug A — el `POST` ya no traía el `id` en la respuesta
+
+**Síntoma**: `POST /api/productos` devolvía `201` con el producto creado, pero **sin el
+campo `id`** (`{"nombre":"...", "precio":..., ...}`, sin `"id":N`). El registro sí se
+guardaba bien en la base de datos (confirmado con un `GET` inmediatamente después, que sí
+mostraba el `id` real) — el bug era solo en el objeto que se devolvía en el momento del
+`POST`.
+
+**Diagnóstico**: antes de la reestructuración, `crear()` se llamaba directo dentro de la
+misma clase (`CrudService.crear()` invocado desde el propio `ProductoService`). Ahora
+`ProductoServiceImpl.crear()` llama a `productoRepository.crear()` — **un bean EJB
+distinto**, inyectado por interfaz. Con `GenerationType.IDENTITY`, EclipseLink necesita
+ejecutar el `INSERT` real para conocer el id generado — pero al moverse la llamada a
+`em.persist()` un nivel más adentro (dentro de la llamada anidada Service → Repository),
+el id ya no quedaba sincronizado en el objeto a tiempo para el `return` sin forzar el
+flush explícitamente.
+
+**Fix**: agregar `em.flush()` justo después de `em.persist()` en
+`AbstractRepository.crear()`. Esto fuerza el `INSERT` real de inmediato (no espera al
+commit de la transacción), garantizando que el `id` generado esté poblado en el objeto
+antes de que cualquiera lo use.
+
+### Bug B — `PUT`/`DELETE` a un producto inexistente daban `403`, no `404`
+
+**Síntoma**: `PUT`/`DELETE /api/productos/99999` (id que no existe) devolvían `403
+Forbidden` en vez del `404 Not Found` que el propio código ya construye explícitamente
+(`Response.status(Response.Status.NOT_FOUND).build()`).
+
+**Diagnóstico (intento 1, incompleto)**: se sospechó del `web.xml` con el `error-page`
+para `404` que se había agregado para el fallback de rutas de TanStack Router (ver
+incidente 9) — la teoría: ese `error-page` es **global**, así que también intercepta los
+`404` que la propia API genera a propósito, no solo los de rutas de React inexistentes.
+Al redirigir un `PUT`/`DELETE` hacia `index.html` (un archivo estático), el servidor de
+archivos estáticos rechaza esos verbos — de ahí el `403`.
+
+**Fix aplicado**: reemplazar el `error-page` de `web.xml` por un **filtro**
+(`SpaFallbackFilter`, `@WebFilter("/*")`) que distingue explícitamente `/api/*` (nunca lo
+toca) de rutas de React sin archivo real (esas sí las reenvía a `index.html`). Se borró
+`web.xml` y la config `<webXml>` del `pom.xml` por completo.
+
+**Pero el `403` seguía pasando incluso con el filtro ya en el código.** Diagnóstico real:
+```bash
+unzip -l target/HelloJakarta-variante.war | grep -i web.xml
+# → WEB-INF/web.xml SI aparecia, a pesar de haber borrado el archivo fuente
+```
+La causa real: nunca se corrió `mvn clean package`, solo `mvn package` repetidas veces.
+Maven arma el WAR sobre una carpeta intermedia (`target/HelloJakarta-variante/`) y, sin un
+`clean`, **no borra archivos que ya no vienen de ninguna fuente actual** — el `web.xml`
+viejo seguía copiado ahí de un build anterior, sin que ningún cambio de configuración lo
+quitara.
+
+**Fix definitivo**: `mvn clean package`. Confirmado con el mismo `unzip -l` que el
+`web.xml` ya no estaba en el WAR nuevo, y las pruebas de `PUT`/`DELETE` a un id inexistente
+dieron `404` real.
+
+**Moraleja para la próxima vez (dos, una por bug)**:
+- Bug A: si un `id` autogenerado (`IDENTITY`) no aparece después de mover un `persist()`
+  detrás de una llamada EJB anidada, sospechar de timing de sincronización y agregar
+  `em.flush()` explícito.
+- Bug B: **cuando cambias qué archivos entran al WAR (agregar, quitar, o mover algo fuera
+  de `src/main/webapp/`), corre `mvn clean package`, no solo `mvn package`** — de otra
+  forma Maven puede seguir empaquetando archivos que ya "borraste" en el código fuente,
+  porque siguen viviendo en la carpeta intermedia de `target/` de un build anterior.

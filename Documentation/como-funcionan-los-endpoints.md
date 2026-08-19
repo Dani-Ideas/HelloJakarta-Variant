@@ -131,26 +131,58 @@ del mismo WAR).
 
 Ver secciones 2 y 3 de arriba — GlassFish recibe el socket, identifica el context root, y
 Jersey (el motor JAX-RS) crea una instancia de `ProductoResource`, inyectándole
-`@EJB private ProductoService productoService;` (una instancia del pool, porque es
-`@Stateless`).
+`@EJB private ProductoService productoService;`. Ojo: `ProductoService` aquí es una
+**interfaz** (vive en `org.example.lib`) — GlassFish resuelve sola cuál es la única
+implementación disponible (`org.example.ejb.ProductoServiceImpl`) y te da una instancia de
+esa (del pool, porque es `@Stateless`). El `Resource` nunca escribe el nombre
+`ProductoServiceImpl` en ningún lado.
 
-### FASE 4 — Entra el EJB
+### FASE 4 — Entra el Resource, que ya casi no hace nada por sí mismo
 
 ```java
+// rest/ProductoResource.java
 @GET
 public List<ProductoDTO> listar() {
-    return productoService.listar().stream()
-            .map(ProductoMapper::toDTO)
-            .collect(Collectors.toList());
+    return productoService.listar();
 }
 ```
-`productoService.listar()` — heredado de `CrudService<Producto, Long>` (ver sección 6). Al
-entrar, el contenedor EJB ya abrió una transacción JTA por detrás (default `REQUIRED`),
-aunque sea solo lectura.
+Nota lo corto que quedó: **el Resource ya no convierte nada** — ni siquiera aparece
+`ProductoMapper` en este archivo. Solo traduce "llegó un GET a esta URL" en "llama este
+método de la interfaz", y lo que sea que ese método regrese, lo envuelve en la respuesta
+HTTP. Toda la conversión Entity↔DTO se movió una capa más adentro (FASE 5).
 
-### FASE 5 — Entra JPA/EclipseLink y toca la base real
+### FASE 5 — Entra el Service (negocio), que llama al Repository
 
 ```java
+// ejb/ProductoServiceImpl.java
+@Stateless
+public class ProductoServiceImpl implements ProductoService {
+
+    @EJB
+    private ProductoRepository productoRepository;   // otra interfaz, de lib/
+
+    @Override
+    public List<ProductoDTO> listar() {
+        return productoRepository.listar().stream()
+                .map(ProductoMapper::toDTO)
+                .collect(Collectors.toList());
+    }
+}
+```
+Dos cosas pasan aquí:
+1. `productoService.listar()` (llamado desde el Resource) en realidad ejecuta ESTE método,
+   porque `ProductoServiceImpl` es la implementación real de la interfaz `ProductoService`.
+2. Aquí adentro se inyecta **otra** interfaz, `ProductoRepository` (también de `lib/`),
+   resuelta a `org.example.ejb.ProductoRepositoryImpl`. El contenedor EJB ya abrió una
+   transacción JTA por detrás desde que entró a este método (default `REQUIRED`); cuando la
+   llamada entra a `ProductoRepositoryImpl` un renglón después, **se une a esa misma
+   transacción**, no abre una nueva — es la misma regla que ya conocías, solo que ahora
+   cruza un bean más.
+
+### FASE 6 — Entra JPA/EclipseLink y toca la base real
+
+```java
+// ejb/AbstractRepository.java -- heredado por ProductoRepositoryImpl
 public List<T> listar() {
     String jpql = "SELECT e FROM " + getEntityClass().getSimpleName() + " e ORDER BY e.id";
     return em.createQuery(jpql, getEntityClass()).getResultList();
@@ -161,17 +193,8 @@ public List<T> listar() {
 - EclipseLink traduce el JPQL a SQL real, lo manda a Derby (puerto 1527), recibe filas
   crudas, y las convierte en objetos `Producto` (hidratación, usando `@Column` para saber
   qué columna va en qué campo).
-
-### FASE 6 — Vuelve hacia arriba y se convierte en DTO
-
-```java
-public static ProductoDTO toDTO(Producto producto) {
-    return new ProductoDTO(producto.getId(), producto.getNombre(), producto.getSku(),
-                            producto.getPrecio(), producto.getStock());
-}
-```
-Cada `Producto` (entidad JPA) se convierte en un `ProductoDTO` (objeto plano) — el que sí
-viaja por la red.
+- Esto regresa un `List<Producto>` (entidades) hacia `ProductoServiceImpl` — que es
+  exactamente donde entra el `.map(ProductoMapper::toDTO)` que ya viste en la FASE 5.
 
 ### FASE 7 — De Java a JSON, y de vuelta a React
 
@@ -196,13 +219,13 @@ Derby (archivo en disco)
 EclipseLink (fila → objeto Producto)
    │  JPQL/EntityManager
    ▼
-CrudService.listar() / ProductoService  [EJB, dentro de una transaccion]
-   │
+ProductoRepositoryImpl.listar()  [ejb, extiende AbstractRepository -- solo datos]
+   │  List<Producto>
    ▼
-ProductoMapper.toDTO()  [Producto → ProductoDTO]
-   │
+ProductoServiceImpl.listar()  [ejb, @Stateless -- aqui pasa Entity -> DTO via Mapper]
+   │  ProductoMapper.toDTO()  [Producto → ProductoDTO]
    ▼
-ProductoResource.listar()  [JAX-RS]
+ProductoResource.listar()  [rest, JAX-RS -- solo delega, ya recibe DTO listo]
    │  JSON-B: List<ProductoDTO> → texto JSON
    ▼
 HTTP response (200, application/json)
@@ -222,46 +245,69 @@ JSX → DOM → lo que ves en pantalla
 
 ---
 
-## 6. Por dentro: cómo interactúan las clases (`CrudService`, generics, inyección)
+## 6. Por dentro: cómo interactúan las clases (`lib`/`ejb`, generics, inyección)
 
-Esta sección corrige varios malentendidos comunes al ver este código por primera vez.
+Esta sección corrige varios malentendidos comunes al ver este código por primera vez. Se
+reescribió cuando el proyecto pasó de una sola clase heredable (`CrudService`) a dos capas
+separadas por interfaz: `Repository` (datos) y `Service` (negocio) — ver `DOCUMENTATION.md`
+sección 1 para el panorama completo.
 
-### 6.1 `CrudService` NO está "registrada por Jakarta"
+### 6.1 Las interfaces de `lib/` NO están "registradas por Jakarta" — son solo contratos
 
-`CrudService` es una clase Java común, **sin ninguna anotación de Jakarta encima** (no tiene
-`@Stateless`, ni `@Singleton`, nada). GlassFish no la conoce como concepto separado en
-runtime.
+`ProductoRepository`, `ProductoService`, etc. (en `org.example.lib`) son interfaces Java
+comunes, **sin ninguna anotación de Jakarta encima**. GlassFish no las "registra" — son
+solo la forma/el contrato que algo más debe cumplir.
 
-Lo que sí se registra es esto, en `ProductoService.java`:
+Lo que sí se registra son las clases de `org.example.ejb`:
 ```java
 @Stateless
-public class ProductoService extends CrudService<Producto, Long> {
+public class ProductoRepositoryImpl extends AbstractRepository<Producto, Long>
+        implements ProductoRepository { ... }
 ```
-`@Stateless` le dice a GlassFish "esto sí es un EJB, regístralo". Como `ProductoService`
-**hereda** todo lo de `CrudService`, la instancia final trae todo "pegado" — pero GlassFish
-nunca "vio" a `CrudService` por separado, solo ve el objeto `ProductoService` completo.
+`@Stateless` le dice a GlassFish "esto sí es un EJB, regístralo". Fíjate que esta clase hace
+**dos cosas a la vez**: **hereda** de `AbstractRepository` (para no repetir el código de
+`crear`/`listar`/`buscarPorId`/`eliminar`) e **implementa** `ProductoRepository` (para que
+otros beans puedan inyectarla sin conocer su nombre real). Son dos mecanismos distintos de
+Java funcionando juntos, no el mismo:
+- **Herencia** (`extends`) = "tomo prestado código ya escrito".
+- **Implementación de interfaz** (`implements`) = "prometo que voy a tener estos métodos,
+  para que alguien más pueda usarme sin saber quién soy".
 
-Analogía: si heredas los ojos azules de tu papá, el gobierno no tiene un registro aparte de
-"los ojos de tu papá" — solo te registra a ti, completo, con las características que tengas.
-
-### 6.2 El `EntityManager` se inyecta HACIA la clase, no se "registra en" él
+### 6.2 Cómo GlassFish decide qué clase concreta inyectar quiere una interfaz
 
 ```java
+// ejb/ProductoServiceImpl.java
+@EJB
+private ProductoRepository productoRepository;
+```
+`ProductoRepository` es la interfaz. En **todo el proyecto** existe una única clase que la
+implementa (`ProductoRepositoryImpl`) — por eso GlassFish puede resolverlo sin ambigüedad:
+al arrancar, escaneó (con reflection, igual que con `@Path`) todas las clases del WAR,
+encontró que `ProductoRepositoryImpl implements ProductoRepository`, y anotó esa relación en
+su "libreta interna" (la misma idea que ya viste con las rutas HTTP, aplicada aquí a
+inyección de dependencias en vez de URLs). Si algún día existieran DOS implementaciones de
+la misma interfaz sin decirle a GlassFish cuál usar, ahí sí daría un error de deploy por
+ambigüedad — no es magia infinita, solo automático mientras sea único.
+
+### 6.3 El `EntityManager` se inyecta HACIA la clase, no se "registra en" él
+
+```java
+// ejb/AbstractRepository.java
 @PersistenceContext(unitName = "HelloJakartaPU")
 protected EntityManager em;
 ```
 Flujo real:
-1. GlassFish necesita crear una instancia de `ProductoService` (por `@Stateless`).
-2. Revisa **todos los campos del objeto — incluyendo los heredados de `CrudService`** —
-   buscando anotaciones de inyección.
+1. GlassFish necesita crear una instancia de `ProductoRepositoryImpl` (por `@Stateless`).
+2. Revisa **todos los campos del objeto — incluyendo los heredados de `AbstractRepository`**
+   — buscando anotaciones de inyección.
 3. Encuentra `em` (heredado) con `@PersistenceContext`, y le **entrega** un `EntityManager`
    ya funcional.
 
-No es que `CrudService` "se registre en" el EntityManager — GlassFish **regala** un
+No es que `AbstractRepository` "se registre en" el EntityManager — GlassFish **regala** un
 EntityManager a cualquier bean que lo pida, sin importar si el campo está declarado directo
 en la clase o heredado.
 
-### 6.3 Cómo se arma el JPQL (y cuándo se conecta de verdad a la base)
+### 6.4 Cómo se arma el JPQL (y cuándo se conecta de verdad a la base)
 
 ```java
 public List<T> listar() {
@@ -278,22 +324,39 @@ public List<T> listar() {
   ```
   `Producto.class` es "la clase Producto, como dato que se puede pasar de un lado a otro"
   (un objeto `Class`). `.getSimpleName()` da el nombre en texto: `"Producto"`.
-- Para `ProductoService`, la línea arma literalmente: `"SELECT e FROM Producto e ORDER BY e.id"`.
+- Para `ProductoRepositoryImpl`, la línea arma literalmente:
+  `"SELECT e FROM Producto e ORDER BY e.id"`.
 - **Esto NO es SQL** — es **JPQL** (Jakarta Persistence Query Language), habla de clases
   Java (`Producto`), no de tablas (`PRODUCTO`). EclipseLink lo traduce a SQL real después.
 - **Armar el texto no toca la base de datos.** Es manipulación de strings en memoria, sin
   red. La conexión real sucede hasta `.getResultList()` — esa es la línea que manda la
   consulta por la red hacia Derby y trae las filas.
 
-### 6.4 La herencia se resuelve en COMPILACIÓN, no en runtime
+### 6.5 Dos formas distintas de "resolver algo", en dos momentos distintos
 
-`class ProductoService extends CrudService<Producto, Long>` se resuelve **cuando compilas**
-(`mvn package` → `javac`), no cuando el programa corre. El compilador entiende, en ese
-momento: "el `.class` final de `ProductoService` debe incluir todo el comportamiento de
-`CrudService`, con `T` reemplazado por `Producto` y `ID` reemplazado por `Long`". Queda fijo
-dentro del archivo compilado — no hay ningún proceso en runtime que "busque" esta relación.
+Esto es nuevo respecto a la versión anterior de este documento — vale la pena que quede
+clarísima la diferencia:
 
-### 6.5 Generics desde cero
+| | `extends AbstractRepository<Producto, Long>` | `@EJB private ProductoRepository ...` |
+|---|---|---|
+| Mecanismo | Herencia (generics) | Inyección de dependencias (interfaz) |
+| ¿Cuándo se resuelve? | **En compilación** (`javac`) | **En deploy** (GlassFish, con reflection) |
+| ¿Quién lo resuelve? | El compilador de Java | El contenedor EJB de GlassFish |
+| ¿Qué pasa si falla? | No compila, ni siquiera generas el `.class` | Compila bien, pero el deploy del WAR falla |
+
+`class ProductoRepositoryImpl extends AbstractRepository<Producto, Long>` se resuelve
+**cuando compilas** (`mvn package` → `javac`) — el compilador entiende, en ese momento, que
+el `.class` final debe incluir todo el comportamiento de `AbstractRepository`, con `T`
+reemplazado por `Producto` y `ID` reemplazado por `Long`. Queda fijo en el archivo
+compilado, sin ningún proceso en runtime buscando esta relación.
+
+En cambio, `@EJB private ProductoRepository productoRepository;` se resuelve **hasta que
+GlassFish despliega el WAR** — es en ese momento (no antes) cuando decide "la única clase
+que implementa esto es `ProductoRepositoryImpl`, te doy una instancia de esa". Por eso un
+error de inyección (ej. ninguna clase implementa la interfaz) nunca lo ves como error de
+compilación — el código compila perfecto, y el problema solo aparece al desplegar.
+
+### 6.6 Generics desde cero
 
 Ejemplo de juguete, sin Jakarta:
 ```java
@@ -320,26 +383,35 @@ abstract class FabricaDePan {
 }
 ```
 
-**Exactamente lo mismo pasa con `CrudService<T, ID>`:**
+**Exactamente lo mismo pasa con `Repository<T, ID>` (la interfaz) y `AbstractRepository<T, ID>` (la implementación compartida):**
 ```java
-public abstract class CrudService<T, ID> {
+public interface Repository<T, ID> {
+    T crear(T entidad);
+    List<T> listar();
+    T buscarPorId(ID id);
+    boolean eliminar(ID id);
+}
+
+public abstract class AbstractRepository<T, ID> implements Repository<T, ID> {
     public T crear(T entidad) { ... }
     public List<T> listar() { ... }
     public T buscarPorId(ID id) { ... }
+    public boolean eliminar(ID id) { ... }
 }
 ```
-`class ProductoService extends CrudService<Producto, Long>` es como si `CrudService` se
-hubiera escrito, solo para `ProductoService`, así (esto no lo escribes tú, lo resuelve el
-compilador):
+`class ProductoRepositoryImpl extends AbstractRepository<Producto, Long> implements ProductoRepository`
+es como si todo eso se hubiera escrito, solo para `ProductoRepositoryImpl`, así (esto no lo
+escribes tú, lo resuelve el compilador):
 ```java
 public Producto crear(Producto entidad) { ... }
 public List<Producto> listar() { ... }
 public Producto buscarPorId(Long id) { ... }
+public boolean eliminar(Long id) { ... }
 ```
 
-### 6.6 Aclaración puntual: `Long` no tiene NADA que ver con `List`
+### 6.7 Aclaración puntual: `Long` no tiene NADA que ver con `List`
 
-Malentendido común: pensar que `Long` (en `CrudService<Producto, Long>`) es "parte de la
+Malentendido común: pensar que `Long` (en `Repository<Producto, Long>`) es "parte de la
 lista". Son dos cosas **completamente distintas**, solo comparten la sintaxis `<...>`:
 
 - **`Long`** — la clase de Java que representa **un número entero** guardado como objeto.
@@ -347,12 +419,12 @@ lista". Son dos cosas **completamente distintas**, solo comparten la sintaxis `<
   ```java
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
-  private Long id;   // <- por esto "Long" como segundo parametro de CrudService
+  private Long id;   // <- por esto "Long" como segundo parametro de Repository<T, ID>
   ```
   Si una entidad futura tuviera un `id` de tipo texto (ej. un UUID), sería
-  `CrudService<OtraEntidad, String>` en vez de `Long`.
+  `Repository<OtraEntidad, String>` en vez de `Long`.
 - **`List`** — una interfaz de Java totalmente distinta: "una colección ordenada de cosas".
-  Aparece en `listar()`, cuyo retorno es `List<T>` → para `ProductoService`,
+  Aparece en `listar()`, cuyo retorno es `List<T>` → para `ProductoRepository`,
   `List<Producto>` ("una lista de Productos").
 
 Ambos usan `<...>` porque ambos usan **generics** (la misma característica del lenguaje,

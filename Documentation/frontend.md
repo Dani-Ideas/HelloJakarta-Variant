@@ -163,10 +163,12 @@ frontend ya están ahí, listos para empaquetarse junto con las clases Java comp
 ```
 HelloJakarta-variante/
 ├── back/                 todo el backend Jakarta EE (pom.xml, src/main/java, etc.)
-│   ├── src/main/webapp/   GENERADO por `npm run build` -- no se edita a mano, se pisa
-│   │                      completo en cada build (emptyOutDir: true)
-│   └── src/main/webxml/   web.xml a mano -- FUERA de webapp/ a proposito, para que
-│                          sobreviva el emptyOutDir (ver bitacora-fixes.md, incidente 9)
+│   ├── src/main/java/org/example/
+│   │   ├── lib/            interfaces (Repository, Service, y las especificas por entidad)
+│   │   ├── ejb/            implementaciones @Stateless/@Singleton (ver DOCUMENTATION.md, sec. 1)
+│   │   └── rest/           JAX-RS + SpaFallbackFilter (fallback de rutas de React)
+│   └── src/main/webapp/   GENERADO por `npm run build` -- no se edita a mano, se pisa
+│                          completo en cada build (emptyOutDir: true)
 └── frontend/
     ├── index.html          punto de entrada real (fuente, no el generado)
     ├── package.json         dependencias + scripts (npm run dev/build/preview)

@@ -11,12 +11,9 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.example.dto.FacturaDTO;
-import org.example.mapper.FacturaMapper;
-import org.example.model.Factura;
-import org.example.service.FacturaService;
+import org.example.lib.FacturaService;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Path("/facturas")
 @Produces(MediaType.APPLICATION_JSON)
@@ -28,24 +25,22 @@ public class FacturaResource {
 
     @GET
     public List<FacturaDTO> listar() {
-        return facturaService.listar().stream()
-                .map(FacturaMapper::toDTO)
-                .collect(Collectors.toList());
+        return facturaService.listar();
     }
 
     @GET
     @Path("/{id}")
     public Response buscar(@PathParam("id") Long id) {
-        Factura factura = facturaService.buscarPorId(id);
-        if (factura == null) {
+        FacturaDTO dto = facturaService.buscarPorId(id);
+        if (dto == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        return Response.ok(FacturaMapper.toDTO(factura)).build();
+        return Response.ok(dto).build();
     }
 
     @POST
     public Response crear(@Valid FacturaDTO dto) {
-        Factura creada = facturaService.crear(FacturaMapper.toEntity(dto));
-        return Response.status(Response.Status.CREATED).entity(FacturaMapper.toDTO(creada)).build();
+        FacturaDTO creada = facturaService.crear(dto);
+        return Response.status(Response.Status.CREATED).entity(creada).build();
     }
 }

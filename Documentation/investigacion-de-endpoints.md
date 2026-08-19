@@ -35,7 +35,9 @@ headers, tiempos y respuesta completa. Funciona en cualquier página web, no sol
 
 1. `Ctrl+Shift+F` en IntelliJ → buscar `@Path("/productos")` → te lleva a la clase.
 2. Dentro de la clase, busca el método con el verbo correcto (`@GET`, `@POST`, etc.).
-3. Sigue la cadena hacia abajo (Resource → Service → CrudService → Mapper → Entity).
+3. Sigue la cadena hacia abajo: `Resource` (inyecta la interfaz `lib.Service`) →
+   `ejb.ServiceImpl` (negocio + `Mapper`) → interfaz `lib.Repository` → `ejb.*RepositoryImpl`
+   (`EntityManager`) → `Entity`. Ver `DOCUMENTATION.md` sección 1 para el diagrama completo.
 
 ### 1.5 Las 4 preguntas de cualquier endpoint
 
