@@ -403,3 +403,83 @@ Alternativa visual (más cómoda): en IntelliJ Ultimate, **View → Tool Windows
 | `ping-connection-pool` falla | ¿Corriste `start-database`? ¿Puerto 1527 libre? |
 | Endpoint da `404` | ¿Coincide `@ApplicationPath` + `@Path`? ¿La app aparece en `list-applications`? ¿El context root (nombre del WAR) es el correcto en la URL? |
 | Endpoint da `500` | Revisar `server.log` — normalmente `NullPointerException` por una relación JPA sin inicializar, o una transacción que falló. |
+
+
+
+Fase A — Panorama general (5-10 min, solo para ubicarte)
+1. DOCUMENTATION.md (raíz) — secciones 0 y 1 nada más por ahora (arquitectura general, el diagrama lib/ejb/rest). Ignora el resto por ahora.
+
+Fase B — Dónde vive y respira el backend
+2. Documentation/glassfish.md — qué es GlassFish, cómo arranca, dónde vive la base de datos
+3. Documentation/persistencia-derbypool.md — cómo se conecta a Derby
+
+Fase C — El corazón: cómo funciona un endpoint de principio a fin
+4. Documentation/como-funcionan-los-endpoints.md — el documento más importante de todos, tómate tu tiempo aquí, no lo leas de un tirón. Es el que amarra reflection + generics + inyección + JPA + JSON en una sola narrativa.
+5. Vuelve a DOCUMENTATION.md, ahora las secciones "Sintaxis rápida" y "Patrón Repository" — como referencia rápida, no lectura corrida (úsalo mientras el 4 sigue abierto en otra pestaña)
+
+Fase D — Frontend: los fundamentos
+6. Documentation/react.md
+7. Documentation/tanstack.md
+
+Fase E — Frontend: cómo se comunica con el backend (la respuesta directa a tu paso 2)
+8. Documentation/frontend.md
+
+Fase F — Consulta, no lectura corrida (vuelve aquí cuando algo falle)
+9. Documentation/investigacion-de-e
+10. Documentation/bitacora-fixes.md
+11. DOCUMENTATION.md secciones 4-5 (troubleshooting, checklist)
+
+Fase G — Más adelante, cuando llegues ahí
+12. Documentation/shadcn-instalacion-manual.md
+
+---
+
+Orden de lectura del código
+
+Sigue el mismo orden en que se ejecuta una petición real (GET /api/productos), no el orden alfabético
+de carpetas:
+
+Backend:
+1. back/.../model/Producto.java — la forma del dato, lo más básico
+2. back/.../dto/ProductoDTO.java —
+3. back/.../mapper/ProductoMapper.jotro
+4. back/.../lib/Repository.java + lel contrato de datos
+5. back/.../ejb/AbstractRepository.Impl.java — la implementación real
+6. back/.../lib/Service.java + lib/ProductoService.java — el contrato de negocio
+7. back/.../ejb/ProductoServiceImpll
+8. back/.../rest/ApplicationConfig.java — dónde arranca /api
+9. back/.../rest/ProductoResource.java — el punto de entrada HTTP
+10. back/src/main/resources/META-INF/persistence.xml — la config que conecta todo a la BD
+11. Cuando lo anterior ya se sientaava — el mismo patrón pero con lógica
+    de negocio real (recalcular pre entre un CRUD simple y uno con
+    reglas
+12. Al final, lo de soporte: CorsFilter.java, SpaFallbackFilter.java, ValidationExceptionMapper.java,
+    DatosIniciales.java — son infraipal
+
+Frontend:
+1. frontend/src/api/types.ts — la forma de los datos en TypeScript
+2. frontend/src/api/client.ts — cóm
+3. frontend/src/components/ProductosTable.tsx — cómo se muestran (el caso simple)
+4. frontend/src/components/Producto
+5. frontend/src/components/Productonecta (fetch + mutaciones)
+6. frontend/src/routes/*.tsx + fron navega
+7. frontend/src/main.tsx — el punto de entrada real, al final porque amarra todo lo de arriba
+
+---
+
+Tips para lograr tú mismo la comuni
+
+1. Prueba el backend con curl ANTESnt nuevo no funciona por curl, el
+   problema es 100% Java — no pierdnd hasta que curl te dé lo que
+   esperas.
+2. Sigue siempre el mismo orden de capas al agregar algo nuevo: Entity → DTO → Mapper → Repository
+   (interfaz + impl) → Service (intte saltes ninguna, aunque se sienta
+   repetitivo al principio — es lo a pieza.
+3. Define la interfaz TypeScript (tava exactamente, antes de escribir el
+   fetch(). Si el compilador de TS l temprana de que algo no cuadra
+   entre lo que mandas y lo que dec
+4. Vive en la pestaña Network de DevTools mientras desarrollas el frontend — es la forma más rápida
+   de confirmar qué se mandó y qué
+5. Cuando algo "no llega" al frontend, aísla el problema en dos pasos: primero confirma con curl que
+   el backend regresa lo correcto: tend (fetch mal armado, queryKeyraro, CORS). Si no, ni te acerques al frontend todavía.
+6. Copia el patrón de invalidación ductosPanel.tsx(queryClient.invalidateQueries) ación nueva — es el mismo moldesiempre, solo cambia el queryKey

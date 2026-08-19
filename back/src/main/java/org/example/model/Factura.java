@@ -1,11 +1,14 @@
 package org.example.model;
 
+import jakarta.json.bind.annotation.JsonbTransient;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -38,6 +41,16 @@ public class Factura {
 
     @OneToMany(mappedBy = "factura", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<FacturaDetalle> detalles = new ArrayList<>();
+
+    // El lado "muchos": este SI crea la columna real (sesion_caja_id) en la tabla FACTURA.
+    // Una Factura pertenece a UNA SesionCaja (no una lista) -- por eso @ManyToOne, no
+    // @OneToMany, y el tipo es SesionCaja, no List<SesionCaja>.
+    @ManyToOne
+    @JoinColumn(name = "sesion_caja_id")
+    // Sin esto, serializar una Factura -> sesionCaja -> facturas -> sesionCaja -> ...
+    // entra en un ciclo infinito, igual que paso antes con FacturaDetalle -> Factura.
+    @JsonbTransient
+    private SesionCaja sesionCaja;
 
     public Factura() {
     }
