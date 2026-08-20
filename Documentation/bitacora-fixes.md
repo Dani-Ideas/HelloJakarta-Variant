@@ -332,3 +332,231 @@ dieron `404` real.
   de `src/main/webapp/`), corre `mvn clean package`, no solo `mvn package`** — de otra
   forma Maven puede seguir empaquetando archivos que ya "borraste" en el código fuente,
   porque siguen viviendo en la carpeta intermedia de `target/` de un build anterior.
+
+---
+
+## GUÍA TEMPORAL — terminar el CRUD de `SesionCaja`
+
+**Esto no es un incidente**, es una guía de referencia para retomar el ejercicio de
+`SesionCaja` donde se quedó. Bórrala cuando ya no la necesites, no forma parte del
+historial de bugs reales del proyecto.
+
+**Ya está hecho**: `model/SesionCaja.java` ✓, `dto/SesionCajaDTO.java` ✓ (ambos con
+`LocalDateTime` para `fApertura`/`fCierre`, y `Factura.sesionCaja` con el `@ManyToOne` +
+`@JsonbTransient` correspondiente).
+
+### Paso 1 — Mapper (`mapper/SesionCajaMapper.java`)
+
+Mismo patrón que `FacturaMapper.java` (tiene una lista anidada, igual que `Factura` con
+sus `detalles`):
+
+```java
+package org.example.mapper;
+
+import org.example.dto.SesionCajaDTO;
+import org.example.model.SesionCaja;
+
+import java.util.stream.Collectors;
+
+public final class SesionCajaMapper {
+
+    private SesionCajaMapper() {
+    }
+
+    public static SesionCajaDTO toDTO(SesionCaja sesion) {
+        if (sesion == null) {
+            return null;
+        }
+        SesionCajaDTO dto = new SesionCajaDTO();
+        dto.setId(sesion.getId());
+        dto.setFApertura(sesion.getFApertura());
+        dto.setFCierre(sesion.getFCierre());
+        dto.setCerrada(sesion.isCerrada());          // boolean primitivo -> isCerrada(), no getCerrada()
+        dto.setMontoApertura(sesion.getMontoApertura());
+        dto.setMontoCierre(sesion.getMontoCierre());
+        dto.setCajero(sesion.getCajero());
+        dto.setLocacion(sesion.getLocacion());
+        dto.setFacturas(sesion.getFacturas().stream()
+                .map(FacturaMapper::toDTO)            // reusa el Mapper que ya existe
+                .collect(Collectors.toList()));
+        return dto;
+    }
+
+    public static SesionCaja toEntity(SesionCajaDTO dto) {
+        SesionCaja sesion = new SesionCaja();
+        sesion.setCajero(dto.getCajero());
+        sesion.setLocacion(dto.getLocacion());
+        sesion.setMontoApertura(dto.getMontoApertura());
+        // fApertura, cerrada y facturas NO se copian del dto al abrir -- los decide el
+        // servidor (Paso 3), igual que FacturaServiceImpl decide "fecha" si no viene.
+        return sesion;
+    }
+}
+```
+
+### Paso 2 — Repository (`lib/SesionCajaRepository.java` + `ejb/SesionCajaRepositoryImpl.java`)
+
+No necesita nada propio (el "cerrar caja" del Paso 4 en adelante es distinto a un
+`actualizar` de copiar campos) — queda tan simple como `FacturaRepository`:
+
+```java
+// lib/SesionCajaRepository.java
+package org.example.lib;
+
+import org.example.model.SesionCaja;
+
+public interface SesionCajaRepository extends Repository<SesionCaja, Long> {
+}
+```
+
+```java
+// ejb/SesionCajaRepositoryImpl.java
+package org.example.ejb;
+
+import jakarta.ejb.Stateless;
+import org.example.lib.SesionCajaRepository;
+import org.example.model.SesionCaja;
+
+@Stateless
+public class SesionCajaRepositoryImpl extends AbstractRepository<SesionCaja, Long>
+        implements SesionCajaRepository {
+
+    @Override
+    protected Class<SesionCaja> getEntityClass() {
+        return SesionCaja.class;
+    }
+}
+```
+
+### Paso 3 — Service (`lib/SesionCajaService.java` + `ejb/SesionCajaServiceImpl.java`)
+
+Aquí sí hay lógica propia: al abrir una caja, el **servidor** decide `fApertura` (la hora
+actual) y `cerrada = false` — el cliente nunca manda esos dos datos.
+
+```java
+// lib/SesionCajaService.java
+package org.example.lib;
+
+import org.example.dto.SesionCajaDTO;
+
+public interface SesionCajaService extends Service<SesionCajaDTO, Long> {
+}
+```
+
+```java
+// ejb/SesionCajaServiceImpl.java
+package org.example.ejb;
+
+import jakarta.ejb.EJB;
+import jakarta.ejb.Stateless;
+import org.example.dto.SesionCajaDTO;
+import org.example.lib.SesionCajaRepository;
+import org.example.lib.SesionCajaService;
+import org.example.mapper.SesionCajaMapper;
+import org.example.model.SesionCaja;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Stateless
+public class SesionCajaServiceImpl implements SesionCajaService {
+
+    @EJB
+    private SesionCajaRepository sesionCajaRepository;
+
+    @Override
+    public SesionCajaDTO crear(SesionCajaDTO dto) {
+        SesionCaja sesion = SesionCajaMapper.toEntity(dto);
+        sesion.setFApertura(LocalDateTime.now());   // el servidor decide la hora, no el cliente
+        sesion.setCerrada(false);
+        SesionCaja creada = sesionCajaRepository.crear(sesion);
+        return SesionCajaMapper.toDTO(creada);
+    }
+
+    @Override
+    public List<SesionCajaDTO> listar() {
+        return sesionCajaRepository.listar().stream()
+                .map(SesionCajaMapper::toDTO)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public SesionCajaDTO buscarPorId(Long id) {
+        return SesionCajaMapper.toDTO(sesionCajaRepository.buscarPorId(id));
+    }
+}
+```
+
+### Paso 4 — Resource (`rest/SesionCajaResource.java`) — el GET y el POST
+
+```java
+package org.example.rest;
+
+import jakarta.ejb.EJB;
+import jakarta.validation.Valid;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import org.example.dto.SesionCajaDTO;
+import org.example.lib.SesionCajaService;
+
+import java.util.List;
+
+@Path("/sesiones-caja")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+public class SesionCajaResource {
+
+    @EJB
+    private SesionCajaService sesionCajaService;
+
+    @GET
+    public List<SesionCajaDTO> listar() {
+        return sesionCajaService.listar();
+    }
+
+    @GET
+    @Path("/{id}")
+    public Response buscar(@PathParam("id") Long id) {
+        SesionCajaDTO dto = sesionCajaService.buscarPorId(id);
+        if (dto == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        return Response.ok(dto).build();
+    }
+
+    @POST
+    public Response crear(@Valid SesionCajaDTO dto) {
+        SesionCajaDTO creada = sesionCajaService.crear(dto);
+        return Response.status(Response.Status.CREATED).entity(creada).build();
+    }
+}
+```
+
+### Lo que falta para el CRUD completo (no lo construyas todavía, es para cuando llegues ahí)
+
+- **`PUT /sesiones-caja/{id}`** (cerrar caja): un `actualizar` en `SesionCajaService`/
+  `SesionCajaRepository` que reciba `montoCierre`, ponga `fCierre = LocalDateTime.now()` y
+  `cerrada = true` — mismo patrón que `ProductoService.actualizar`, pero tocando solo esos
+  3 campos, no todos.
+- **`DELETE`**: piénsalo antes de agregarlo — ¿tiene sentido borrar una sesión de caja ya
+  cerrada? Mismo criterio que ya aplicamos con `Factura` (no todo necesita los 4 verbos).
+
+### Cómo probarlo cuando termines de escribirlo
+
+```bash
+cd back && mvn clean package
+# desplegar con asadmin deploy --force=true ...
+
+curl -X POST http://localhost:8080/HelloJakarta-variante/api/sesiones-caja \
+  -H "Content-Type: application/json" \
+  -d '{"montoApertura": 10.00, "cajero": "cajero1", "locacion": "tienda1"}'
+
+curl http://localhost:8080/HelloJakarta-variante/api/sesiones-caja
+```

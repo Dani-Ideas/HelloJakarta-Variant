@@ -327,6 +327,42 @@ repo — todos los comandos `mvn` de aquí abajo asumen que estás parado en `ba
 5. Si una dependencia de Jakarta no resuelve: confirma `groupId=jakarta.*` (no `javax.*`,
    esa es la API vieja) y que la versión corresponda a la spec pedida (`10.0.0` para EE 10).
 
+### Revisar rápido si el código Java compila (sin armar el WAR completo)
+
+Mientras estás escribiendo/corrigiendo una clase, no hace falta `mvn package` (que además
+dispara todo el build del frontend vía `frontend-maven-plugin`, mucho más lento). Basta con:
+
+```bash
+cd back
+mvn -q compile
+```
+
+Si no imprime nada, compiló bien. Si falla, imprime la lista de errores con archivo y línea
+exacta de cada uno.
+
+### Cómo leer una pared enorme de errores sin espantarte (esto nos pasó de verdad)
+
+Un solo error real en un archivo puede disparar una **cascada de errores fantasma** en
+archivos que ni tocaste. Nos pasó así: duplicamos un campo (`variable montoapertura is
+already defined`) en `SesionCaja.java`, y la lista de errores mostró además decenas de
+`cannot find symbol: method getNombre()/getSku()/getPrecio()...` en `ProductoMapper.java`,
+`FacturaMapper.java`, `ProductoRepositoryImpl.java` — archivos que no tenían nada mal.
+
+**Por qué pasa esto**: Lombok genera los getters/setters (`@Getter`/`@Setter`) durante la
+misma pasada de compilación. Si un archivo tiene un error real de sintaxis (como una
+variable duplicada), `javac` puede abortar esa pasada antes de que Lombok termine de generar
+los métodos de las demás clases del proyecto — y entonces esas clases, que en el código
+fuente se ven perfectas, aparecen como si les faltaran sus propios getters/setters.
+
+**Regla práctica**: cuando veas una lista larga de errores,
+1. No arregles de arriba hacia abajo a ciegas.
+2. Busca el error que sea **específico y tuyo** — algo como
+   `variable X is already defined`, `cannot find symbol` señalando una variable con
+   nombre raro, un `;` faltante, etc. — en vez de los genéricos `cannot find symbol:
+   method getX()` repetidos en archivos que no tocaste.
+3. Corrige solo ese, vuelve a compilar. Casi siempre la lista completa de errores fantasma
+   desaparece sola.
+
 ### Consultar la base de datos Derby que vive en GlassFish
 
 Con la base arrancada (`./asadmin start-database`), usa el cliente `ij` que trae Derby:

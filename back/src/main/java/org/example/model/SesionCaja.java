@@ -11,7 +11,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -25,15 +25,19 @@ public class SesionCaja {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private LocalDate fecha;
+    // LocalDateTime (fecha + hora), no LocalDate -- para poder calcular duracion real de
+    // la sesion (una caja normal dura horas, no dias completos).
+    private LocalDateTime fApertura;
+
+    private LocalDateTime fCierre;
 
     @Column(nullable = false, precision = 10, scale = 2)
-    private BigDecimal apertura = BigDecimal.ZERO;
+    private BigDecimal montoApertura = BigDecimal.ZERO;
 
     // Sin "nullable = false": mientras la caja sigue abierta, este campo NO tiene valor
     // todavia. Se llena hasta el UPDATE de cierre.
     @Column(precision = 10, scale = 2)
-    private BigDecimal cierre;
+    private BigDecimal montoCierre;
 
     // boolean en vez de enum (decision tuya) -- Lombok genera isCerrada(), no getCerrada().
     private boolean cerrada;
