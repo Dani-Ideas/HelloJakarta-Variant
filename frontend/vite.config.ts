@@ -1,9 +1,17 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import path from "node:path";
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      // Alias usado por shadcn/ui ("@/components/...", "@/lib/utils", etc.)
+      "@": path.resolve(import.meta.dirname, "./src"),
+    },
+  },
   // El WAR se despliega bajo /HelloJakarta-variante/, no en la raiz del dominio -- sin
   // esto, los <script>/<link> del index.html generado apuntarian a rutas absolutas
   // equivocadas (la raiz del servidor en vez del context root del WAR).

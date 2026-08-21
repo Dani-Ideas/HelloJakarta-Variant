@@ -3,6 +3,9 @@ import { RootLayout } from "./routes/RootLayout";
 import { HomePage } from "./routes/HomePage";
 import { ProductosPage } from "./routes/ProductosPage";
 import { FacturasPage } from "./routes/FacturasPage";
+import { SalirSitioPage } from "./routes/pago/SalirSitioPage";
+import { FormularioPagoPage } from "./routes/pago/FormularioPagoPage";
+import { FormularioLargoPage } from "./routes/pago/FormularioLargoPage";
 
 // Este archivo es el "mapa" completo de la app: que URL corresponde a que componente.
 // No dibuja nada el mismo -- solo arma la estructura que despues usa <RouterProvider/>
@@ -35,9 +38,35 @@ const facturasRoute = createRoute({
   component: FacturasPage,
 });
 
+// Rutas del "menu de pago" de la pagina de inicio (demo shadcn, 100% front-end).
+const salirSitioRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/salir-sitio",
+  component: SalirSitioPage,
+});
+
+const formularioPagoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/formulario-pago",
+  component: FormularioPagoPage,
+});
+
+const formularioLargoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/formulario-largo",
+  component: FormularioLargoPage,
+});
+
 // Junta las rutas sueltas en un solo arbol -- esto es lo que createRouter necesita para
 // saber que existe en la app completa.
-const routeTree = rootRoute.addChildren([indexRoute, productosRoute, facturasRoute]);
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  productosRoute,
+  facturasRoute,
+  salirSitioRoute,
+  formularioPagoRoute,
+  formularioLargoRoute,
+]);
 
 export const router = createRouter({
   routeTree,
