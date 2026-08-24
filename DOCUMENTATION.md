@@ -302,6 +302,40 @@ public class ProductoDTO {
   aunque Maven compile perfecto — el plugin es solo para que el editor "entienda" el código
   generado, no afecta el build real.
 
+### ¿Qué anotación va en qué capa? (no mezclar librerías)
+
+Cada paquete de `org.example` es "dueño" de una sola librería de anotaciones. El error
+típico (nos pasó de verdad con el primer borrador de `SesionCajaDTO`: `@Column(...)` con
+un atributo `message=` que ni existe ahí) es pegar en un archivo la anotación que le
+corresponde a OTRA capa, porque conceptualmente parecen intercambiables pero no lo son.
+
+| Paquete | Librería dueña | Anotaciones típicas | Responde a la pregunta |
+|---|---|---|---|
+| `model/` (Entity) | Jakarta Persistence — `jakarta.persistence.*` | `@Entity` `@Table` `@Id` `@GeneratedValue` `@Column` `@OneToMany` `@ManyToOne` `@JoinColumn` `@Enumerated` | ¿Cómo se guarda esto en la base de datos? |
+| `dto/` (DTO) | Jakarta Bean Validation — `jakarta.validation.*` | `@NotBlank` `@NotNull` `@NotEmpty` `@Positive` `@Size` `@Valid` | ¿Este dato es válido para entrar/salir por HTTP? |
+| `ejb/` | Jakarta Enterprise Beans — `jakarta.ejb.*` | `@Stateless` `@Singleton` `@Startup` `@EJB` `@PostConstruct` | ¿Cómo vive este bean (ciclo de vida, inyección, transacción)? |
+| `rest/` | JAX-RS — `jakarta.ws.rs.*` | `@Path` `@GET` `@POST` `@PUT` `@DELETE` `@PathParam` `@Produces` `@Consumes` | ¿Qué HTTP dispara qué método? |
+| La clase que **de verdad** se convierte a JSON | JSON-B — `jakarta.json.bind.annotation.*` | `@JsonbTransient` `@JsonbProperty` | ¿Qué campo se incluye/excluye al serializar? |
+
+Regla práctica: **el paquete en el que estás parado decide qué librería de anotaciones
+tiene sentido ahí.** Un `Entity` describe una fila de tabla — por eso `Factura.java` tiene
+`@Column(precision = 10, scale = 2)` en `total` (así sabe la base cómo guardar el número).
+Un `DTO` describe un JSON válido — por eso `FacturaDTO.total` NO tiene ninguna validación
+(no lo manda el cliente, lo calcula el servidor; no hay "regla de negocio" que validar ahí,
+solo un valor de salida). Son dos preguntas distintas sobre el mismo dato, y por eso viven
+en dos anotaciones de dos librerías distintas, en dos archivos distintos.
+
+Caso especial, `@JsonbTransient`: hoy vive en el `Entity` (`Factura.sesionCaja`,
+`FacturaDetalle.factura`) para cortar ciclos de serialización, aunque en este proyecto lo
+que realmente se convierte a JSON es siempre el `DTO` (vía el `Mapper`), nunca el `Entity`
+directamente — se dejó ahí como cinturón de seguridad, por si algún día algo llegara a
+serializar la `Entity` sin pasar por el `Mapper`.
+
+Y el motivo del error real que tuviste: `@Column` es de `jakarta.persistence`, y su
+atributo se llama `columnDefinition`, no `message` — `message=` es un atributo de las
+anotaciones de `jakarta.validation` (`@NotBlank(message = "...")`). Eran dos anotaciones de
+dos mundos distintos, fusionadas en una sola línea — por eso Java ni compilaba.
+
 ---
 
 ## 4. Qué revisar si algo falla (por tecnología)

@@ -64,4 +64,14 @@ public class FacturaServiceImpl implements FacturaService {
     public FacturaDTO buscarPorId(Long id) {
         return FacturaMapper.toDTO(facturaRepository.buscarPorId(id));
     }
+
+    @Override
+    public FacturaDTO actualizar(Long id, FacturaDTO dto) {
+        // Reusa FacturaMapper.toEntity igual que crear(): arma una Factura completa desde
+        // el dto (el @Valid del Resource ya garantizo que dto.detalles no viene vacio).
+        // FacturaRepositoryImpl.actualizar() luego solo copia numero/fecha/cliente de este
+        // objeto "cambios" -- el resto (detalles, total) se ignora a proposito.
+        Factura actualizada = facturaRepository.actualizar(id, FacturaMapper.toEntity(dto));
+        return actualizada == null ? null : FacturaMapper.toDTO(actualizada);
+    }
 }

@@ -4,7 +4,8 @@ Carpeta: `frontend/`, hermana de `back/` (todo el backend Jakarta EE vive ahí, 
 `Documentation/glassfish.md`/`bitacora-fixes.md` para el porqué de esta separación). Stack:
 **Vite + React + TypeScript + TanStack Query + TanStack Table**. Consume la API REST del
 backend Jakarta EE (`GET /api/productos`, `GET /api/facturas`, `POST`/`PUT`/`DELETE` de
-productos).
+productos, `POST`/`PUT` de facturas — sin `DELETE`, no tiene sentido de negocio borrar una
+factura ya emitida).
 
 **Esta variante es monolítica**: el frontend compilado vive *dentro* del mismo `.war` que
 el backend. Un solo artefacto, un solo `asadmin deploy`, un solo puerto. Este documento
