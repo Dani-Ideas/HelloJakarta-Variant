@@ -446,9 +446,54 @@ que usa el repositorio generado — misma transacción JTA, misma unidad de pers
   `Repository` que inyecta ya no sea un EJB escrito a mano. Confirmado revisando
   `server.log` de GlassFish 8 tras forzar el conflicto real con `curl`.
 
-### Estado actual (migración parcial, a propósito)
+### Estado actual — migración completa en el Repository
 
-`Producto` y `Factura` ya están migrados a `CrudRepository`, probados end-to-end
-(GET/POST/PUT/DELETE, 404, 409 por FK) contra GlassFish 8 real. `SesionCaja` y `Usuario`
-siguen con el patrón viejo (`AbstractRepository`) por ahora — mientras sigan así,
-`AbstractRepository.java` no se puede borrar todavía, todavía lo usan esas dos entidades.
+Las 4 entidades (`Producto`, `Factura`, `SesionCaja`, `Usuario`) ya usan `CrudRepository`.
+`AbstractRepository.java` y el `Repository<T,ID>` genérico viejo se borraron — no los usa
+nadie. Probado end-to-end contra GlassFish 8 real: `Producto`/`Factura` (GET/POST/PUT/
+DELETE, 404, 409 por FK) y `SesionCaja` (GET/POST, con el `id` correcto en la respuesta
+gracias al mismo fix del `flush()`). `Usuario` solo tiene el `Repository` convertido —
+`Service`/`Resource`/`DTO`/`Mapper` de esa entidad siguen sin construirse, es aparte de
+esta migración.
+
+Nota aparte: al agregar la dependencia explícita `jakarta.data-api` en `pom.xml`, el
+comentario que se escribió tenía un `--` suelto dentro del bloque `<!-- -->` — el mismo
+error de XML documentado en el incidente #9. Recordatorio de que la regla aplica siempre,
+no solo quien escribe el `pom.xml` por primera vez.
+
+---
+
+## 12. DTOs a `record` + Mapper con MapStruct (Producto/Factura)
+
+**Motivo:** en el trabajo real, los DTO son `record` (no clases con Lombok) y el Mapper
+usa MapStruct (interfaz + implementación generada), no una clase estática escrita a mano.
+Se replicó ese patrón para `Producto`/`Factura` — `SesionCaja`/`Usuario` quedaron fuera,
+son de quien los está construyendo.
+
+**El mismo error del `--` en comentarios XML del `pom.xml` (incidente #9) volvió a pasar,
+dos veces en la misma sesión** — una vez al agregar la dependencia de MapStruct, otra al
+agregar el `maven-compiler-plugin`. Van tres veces documentadas ya entre incidente #9, la
+nota de arriba, y esta. Si vuelve a pasar una cuarta vez, revisar con doble cuidado
+cualquier comentario XML que se escriba de corrido sin pensar en la puntuación.
+
+**Único archivo tocado fuera de alcance:** `SesionCajaMapper.java` — tenía
+`.map(FacturaMapper::toDTO)` (referencia a un método `static` que ya no existe, porque
+`FacturaMapper` pasó de clase a interfaz MapStruct). Se cambió a
+`.map(FacturaMapper.INSTANCE::toDTO)` — una sola línea, sin tocar nada más de la lógica de
+`SesionCaja`. No había forma de evitarlo: el tipo de `FacturaMapper` cambió de raíz, y
+`SesionCajaMapper` lo usa.
+
+**Detalle técnico de la integración Lombok + MapStruct**, por si se repite en otro
+proyecto: declarar `annotationProcessorPaths` en `maven-compiler-plugin` para agregar
+`mapstruct-processor` **apaga el escaneo automático de otros procesadores de anotaciones**
+— si no se lista Lombok ahí también, deja de correr sin ningún error visible (los
+`@Getter`/`@Setter` de las `Entity` simplemente dejan de generarse, y aparecen errores de
+"cannot find symbol" en cascada, parecido al bug ya documentado de Lombok). Hace falta
+además `lombok-mapstruct-binding` como tercer processor, para que MapStruct vea los
+getters que Lombok genera en las `Entity` (sin eso, MapStruct corre su ronda antes de que
+existan esos métodos).
+
+Probado end-to-end contra GlassFish 8: `POST`/`PATCH` de `Producto`, `POST` de `Factura`
+con mapeo de relación (`productoId` → `Producto`, incluyendo el precio recalculado en
+servidor), `PATCH` de `Factura`, `DELETE` con conflicto de FK (409), y `GET /sesiones-caja`
+para confirmar que el cambio de una línea en `SesionCajaMapper` no rompió nada.

@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
@@ -14,6 +15,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.example.dto.ProductoDTO;
+import org.example.dto.ProductoPatchDTO;
 import org.example.lib.ProductoService;
 
 import java.util.List;
@@ -56,6 +58,16 @@ public class ProductoResource {
     @Path("/{id}")
     public Response actualizar(@PathParam("id") Long id, @Valid ProductoDTO dto) {
         ProductoDTO actualizado = productoService.actualizar(id, dto);
+        if (actualizado == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        return Response.ok(actualizado).build();
+    }
+
+    @PATCH
+    @Path("/{id}")
+    public Response patch(@PathParam("id") Long id, @Valid ProductoPatchDTO cambios) {
+        ProductoDTO actualizado = productoService.patch(id, cambios);
         if (actualizado == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }

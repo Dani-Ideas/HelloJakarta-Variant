@@ -4,6 +4,7 @@ import jakarta.ejb.EJB;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
@@ -12,6 +13,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.example.dto.FacturaDTO;
+import org.example.dto.FacturaPatchDTO;
 import org.example.lib.FacturaService;
 
 import java.util.List;
@@ -51,6 +53,16 @@ public class FacturaResource {
     @Path("/{id}")
     public Response actualizar(@PathParam("id") Long id, @Valid FacturaDTO dto) {
         FacturaDTO actualizada = facturaService.actualizar(id, dto);
+        if (actualizada == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        return Response.ok(actualizada).build();
+    }
+
+    @PATCH
+    @Path("/{id}")
+    public Response patch(@PathParam("id") Long id, FacturaPatchDTO cambios) {
+        FacturaDTO actualizada = facturaService.patch(id, cambios);
         if (actualizada == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }

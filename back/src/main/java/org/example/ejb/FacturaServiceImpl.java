@@ -5,6 +5,7 @@ import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.example.dto.FacturaDTO;
+import org.example.dto.FacturaPatchDTO;
 import org.example.lib.FacturaRepository;
 import org.example.lib.FacturaService;
 import org.example.lib.ProductoRepository;
@@ -33,6 +34,10 @@ public class FacturaServiceImpl implements FacturaService {
     @Inject
     private ProductoRepository productoRepository;
 
+    // FacturaMapper.INSTANCE, no @Inject: mismo motivo que ProductoServiceImpl -- MapStruct
+    // con componentModel por default genera una clase normal, no un bean CDI.
+    private final FacturaMapper facturaMapper = FacturaMapper.INSTANCE;
+
     // Ver ProductoServiceImpl: el repositorio Jakarta Data no sincroniza el id IDENTITY
     // en el objeto que devuelve insert() -- este EntityManager comparte el mismo contexto
     // de persistencia (misma transaccion JTA, misma unidad HelloJakartaPU) y el flush()
@@ -42,7 +47,7 @@ public class FacturaServiceImpl implements FacturaService {
 
     @Override
     public FacturaDTO crear(FacturaDTO dto) {
-        Factura factura = FacturaMapper.toEntity(dto);
+        Factura factura = facturaMapper.toEntity(dto);
 
         if (factura.getFecha() == null) {
             factura.setFecha(LocalDate.now());
@@ -63,20 +68,20 @@ public class FacturaServiceImpl implements FacturaService {
 
         Factura creada = facturaRepository.insert(factura);
         em.flush();
-        return FacturaMapper.toDTO(creada);
+        return facturaMapper.toDTO(creada);
     }
 
     @Override
     public List<FacturaDTO> listar() {
         // findAll() de Jakarta Data devuelve Stream<T>, no List<T>.
         return facturaRepository.findAll()
-                .map(FacturaMapper::toDTO)
+                .map(facturaMapper::toDTO)
                 .collect(Collectors.toList());
     }
 
     @Override
     public FacturaDTO buscarPorId(Long id) {
-        return FacturaMapper.toDTO(facturaRepository.findById(id).orElse(null));
+        return facturaMapper.toDTO(facturaRepository.findById(id).orElse(null));
     }
 
     @Override
@@ -90,10 +95,33 @@ public class FacturaServiceImpl implements FacturaService {
             return null;
         }
         Factura factura = existente.get();
-        factura.setNumero(dto.getNumero());
-        factura.setFecha(dto.getFecha());
-        factura.setCliente(dto.getCliente());
+        factura.setNumero(dto.numero());
+        factura.setFecha(dto.fecha());
+        factura.setCliente(dto.cliente());
         Factura actualizada = facturaRepository.update(factura);
-        return FacturaMapper.toDTO(actualizada);
+        return facturaMapper.toDTO(actualizada);
+    }
+
+    @Override
+    public FacturaDTO patch(Long id, FacturaPatchDTO cambios) {
+        // Diferencia con actualizar() (PUT): el cliente manda solo el campo que quiere
+        // corregir -- no hace falta reenviar numero/fecha/cliente completos, y no existe
+        // ni la opcion de mandar detalles (ver FacturaPatchDTO).
+        Optional<Factura> existente = facturaRepository.findById(id);
+        if (existente.isEmpty()) {
+            return null;
+        }
+        Factura factura = existente.get();
+        if (cambios.numero() != null) {
+            factura.setNumero(cambios.numero());
+        }
+        if (cambios.fecha() != null) {
+            factura.setFecha(cambios.fecha());
+        }
+        if (cambios.cliente() != null) {
+            factura.setCliente(cambios.cliente());
+        }
+        Factura actualizada = facturaRepository.update(factura);
+        return facturaMapper.toDTO(actualizada);
     }
 }

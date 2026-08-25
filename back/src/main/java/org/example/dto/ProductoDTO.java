@@ -4,31 +4,27 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
-public class ProductoDTO {
+// record, no class: es un contrato de datos inmutable -- se construye completo de una vez
+// (nunca con setters), y Java genera solo por tener el record los accessors (nombre(),
+// no getNombre()), constructor, equals/hashCode y toString. Ya no hace falta Lombok aqui.
+// Las anotaciones de validacion van sobre cada componente del record.
+public record ProductoDTO(
+        Long id,
 
-    private Long id;
+        @NotBlank(message = "El nombre es obligatorio")
+        String nombre,
 
-    @NotBlank(message = "El nombre es obligatorio")
-    private String nombre;
+        @NotBlank(message = "El SKU es obligatorio")
+        String sku,
 
-    @NotBlank(message = "El SKU es obligatorio")
-    private String sku;
+        @NotNull(message = "El precio es obligatorio")
+        @Positive(message = "El precio debe ser mayor a 0")
+        BigDecimal precio,
 
-    @NotNull(message = "El precio es obligatorio")
-    @Positive(message = "El precio debe ser mayor a 0")
-    private BigDecimal precio;
-
-    @PositiveOrZero(message = "El stock no puede ser negativo")
-    private int stock;
+        @PositiveOrZero(message = "El stock no puede ser negativo")
+        int stock
+) {
 }

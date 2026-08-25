@@ -52,13 +52,13 @@ propia), aquí el WAR también trae el frontend embebido — ver `Documentation/
 Todo lo de abajo vive bajo `back/src/main/java/` (el backend es una carpeta hermana de
 `frontend/` — ver `Documentation/frontend.md` sección 3 para el árbol completo del repo).
 
-### 1.1 Dos patrones de Repository conviven ahora mismo (migración en progreso)
+### 1.1 Repository: todo migrado a Jakarta Data (`CrudRepository`)
 
-El proyecto está a mitad de una migración: `Producto` y `Factura` ya usan **Jakarta Data
-(`CrudRepository`)**; `SesionCaja` y `Usuario` todavía usan el **Repository escrito a mano**
-original. Los dos son válidos y conceptualmente el mismo patrón (interfaz en `lib/`,
-implementación que persiste sin saber de negocio) — la diferencia es quién escribe esa
-implementación:
+Las 4 entidades (`Producto`, `Factura`, `SesionCaja`, `Usuario`) usan **Jakarta Data
+(`CrudRepository`)** para su Repository — ya no existe ningún `*RepositoryImpl` escrito a
+mano, ni `AbstractRepository` (se borró, nada lo usa ya). El proveedor (EclipseLink, vía
+GlassFish 8) genera la implementación real en tiempo de despliegue, a partir de la
+interfaz:
 
 ```
 org/example/
@@ -67,27 +67,24 @@ org/example/
 ├── dto/     DTO                       → contrato JSON hacia el cliente (React u otro)
 ├── mapper/  Mapper                    → traduce Entity <-> DTO (clases estaticas, sin estado)
 ├── lib/     INTERFACES (contratos)
-│     ├── Repository<T,ID> / Service<D,ID>   → contrato generico compartido (patron viejo)
-│     ├── ProductoRepository, FacturaRepository  → @Repository de Jakarta Data,
-│     │     extends CrudRepository<T,ID> -- SIN implementacion escrita a mano
-│     ├── SesionCajaRepository, UsuarioRepository → extends Repository<T,ID> (patron
-│     │     viejo) -- SI tienen implementacion en ejb/
-│     └── ProductoService, FacturaService, SesionCajaService, UsuarioService → todos
-│           iguales, esto no cambio (la Service SIEMPRE se escribe a mano, tenga o no
-│           Jakarta Data el Repository de abajo)
+│     ├── Service<D,ID>                     → contrato generico compartido, SOLO para
+│     │     Service (esto no lo toca Jakarta Data -- la Service SIEMPRE se escribe a mano)
+│     ├── ProductoRepository, FacturaRepository, SesionCajaRepository, UsuarioRepository
+│     │     → @Repository de Jakarta Data, extends CrudRepository<T,ID>, SIN
+│     │     implementacion escrita a mano
+│     └── ProductoService, FacturaService, SesionCajaService, UsuarioService → extends
+│           Service<D,ID>, logica de negocio (esto no cambio con la migracion)
 └── ejb/     IMPLEMENTACIONES (@Stateless/@Singleton)
-               ├── AbstractRepository<T,ID>  → logica JPA compartida del patron viejo,
-               │     heredada por SesionCajaRepositoryImpl/UsuarioRepositoryImpl.
-               │     Producto/Factura YA NO la usan -- no se borra todavia porque
-               │     SesionCaja/Usuario siguen dependiendo de ella.
-               ├── ProductoServiceImpl, FacturaServiceImpl, SesionCajaServiceImpl,
-               │     UsuarioServiceImpl → logica de negocio + conversion Entity<->DTO
-               │     (via Mapper) + transacciones. Inyectan su Repository con @Inject
-               │     si es Jakarta Data, @EJB si es el patron viejo (ver 3.x)
+               ├── ProductoServiceImpl, FacturaServiceImpl, SesionCajaServiceImpl →
+               │     logica de negocio + conversion Entity<->DTO (via Mapper) +
+               │     transacciones. Inyectan su Repository con @Inject (CDI), no @EJB
                └── DatosIniciales (@Singleton @Startup) → siembra productos de ejemplo
 rest/        JAX-RS (@Path)            → expone HTTP, solo habla en DTO, inyecta las
                interfaces de Service (nunca las implementaciones directamente)
 ```
+
+`Usuario` todavía no tiene `Service`/`Resource`/`DTO`/`Mapper` (solo el `Repository`) —
+esa parte sigue en construcción, aparte de esta migración.
 
 Detalle completo de la migración, el porqué (Jakarta Data no existe en Jakarta EE 10, hubo
 que subir a GlassFish 8), y un bug real encontrado en el camino: `Documentation/bitacora-fixes.md`
@@ -334,6 +331,20 @@ public class ProductoResource {
 }
 ```
 
+#### Los métodos HTTP, uno por uno: cuáles se escriben, cuáles regala Jersey, y cuáles no aplican
+
+| Método | ¿Quién lo implementa? | En este proyecto |
+|---|---|---|
+| `GET` | Se escribe (`@GET`) | Listar y buscar por id, en todos los `Resource` |
+| `POST` | Se escribe (`@POST`) | Crear |
+| `PUT` | Se escribe (`@PUT`) | Reemplazo completo del recurso (Producto, Factura) |
+| `PATCH` | Se escribe (`@PATCH`, de `jakarta.ws.rs.PATCH`) | Reemplazo **parcial** — solo Producto/Factura por ahora. Usa un DTO aparte (`ProductoPatchDTO`/`FacturaPatchDTO`) con campos opcionales (tipos wrapper, nunca primitivos: `Integer`, no `int` — si no, no hay forma de distinguir "no lo mandaron" de "lo mandaron en 0"); solo se copia un campo si viene no-`null` |
+| `DELETE` | Se escribe (`@DELETE`) | Solo Producto (borrar una Factura ya emitida no tiene sentido de negocio) |
+| `HEAD` | **Automático, Jersey lo genera solo** | No hay que escribir nada: si existe un `@GET` para una ruta, Jersey responde a `HEAD` con los mismos headers y sin cuerpo. Verificado con `curl -I` |
+| `OPTIONS` | **Automático, Jersey lo genera solo** | Devuelve un header `Allow` con los métodos reales que existen para esa ruta (ej. `Allow: GET,POST,PUT,PATCH,OPTIONS,HEAD` para `/productos`) — útil para probar "qué le puedo hacer a este endpoint" sin leer el código |
+| `CONNECT` | **No aplica, no se implementa** | Es para túneles HTTP a través de proxies (ej. HTTPS a través de un proxy). No tiene sentido en un recurso de aplicación — ni JAX-RS trae una anotación `@CONNECT` |
+| `TRACE` | **No aplica, no se implementa** | Es un eco de diagnóstico a nivel HTTP. La mayoría de los servidores lo tienen deshabilitado a propósito por seguridad (ataques tipo *Cross-Site Tracing*) — no es algo que un `Resource` de aplicación deba prestar |
+
 ### Jakarta Bean Validation
 
 Se valida en el borde (los DTO que llegan por REST), no en las entidades. No requiere
@@ -370,9 +381,8 @@ constructores en tiempo de compilación para no escribirlos a mano. Ya está agr
 ```java
 @Getter
 @Setter
-@NoArgsConstructor          // constructor vacio (JPA/JSON-B lo necesitan)
-@AllArgsConstructor         // constructor con todos los campos, en orden de declaracion
-public class ProductoDTO {
+public class Producto {          // Entity, no DTO -- las Entity SIGUEN usando Lombok, ver abajo
+    @Id
     private Long id;
     private String nombre;
     ...
@@ -387,6 +397,74 @@ public class ProductoDTO {
   → Marketplace → "Lombok"`), el IDE va a marcar en rojo cualquier `producto.getNombre()`
   aunque Maven compile perfecto — el plugin es solo para que el editor "entienda" el código
   generado, no afecta el build real.
+- **Los `Entity` (`model/`) siguen usando Lombok** — son objetos mutables por diseño (JPA
+  necesita setters para ir llenando campos al leer de la base). **Los `DTO` (`dto/`) ya NO**
+  — ver la subsección siguiente.
+
+### DTOs como `record`, y Mapper con MapStruct (Producto/Factura)
+
+Los DTOs de `Producto`/`Factura` dejaron de ser clases con Lombok y pasaron a ser
+**`record` de Java** — son contratos de datos inmutables, se construyen completos de una
+vez (nunca con setters), y no necesitan Lombok: Java ya genera solo el constructor,
+accessors (`nombre()`, no `getNombre()`), `equals`/`hashCode`/`toString`.
+
+```java
+public record ProductoDTO(
+        Long id,
+        @NotBlank(message = "El nombre es obligatorio") String nombre,
+        @NotBlank(message = "El SKU es obligatorio") String sku,
+        @NotNull @Positive(message = "El precio debe ser mayor a 0") BigDecimal precio,
+        @PositiveOrZero(message = "El stock no puede ser negativo") int stock
+) {
+}
+```
+
+Las anotaciones de Bean Validation van directo sobre cada componente del `record` —
+funcionan exactamente igual que en una clase (Jakarta EE 11 soporta validar
+`RECORD_COMPONENT`). Para los DTO de `PATCH` (`ProductoPatchDTO`/`FacturaPatchDTO`) los
+componentes son tipos wrapper (`Integer`, no `int`) porque `null` significa "no tocar este
+campo" — con un primitivo no habría forma de distinguir "no lo mandaron" de "lo mandaron
+en 0".
+
+**El `Mapper` pasó de clase estática escrita a mano a interfaz + MapStruct**, mismo
+espíritu que Jakarta Data con el `Repository`: se declara el contrato, la herramienta
+genera la implementación en tiempo de compilación (`ProductoMapperImpl`/
+`FacturaMapperImpl`, se pueden ver en `target/generated-sources/annotations/` después de
+compilar).
+
+```java
+@Mapper
+public interface ProductoMapper {
+    ProductoMapper INSTANCE = Mappers.getMapper(ProductoMapper.class);
+
+    ProductoDTO toDTO(Producto producto);
+
+    @Mapping(target = "id", ignore = true)   // un Producto nuevo no nace con el id del cliente
+    Producto toEntity(ProductoDTO dto);
+}
+```
+
+- Campos con el mismo nombre y tipo en ambos lados (`nombre`, `sku`, `precio`, `stock`) se
+  mapean solos, sin declarar nada.
+- `@Mapping(target = "...", ignore = true)` para lo que NO se debe copiar (ej. `id` al
+  crear, o `sesionCaja` en `Factura`, que no existe en `FacturaDTO`).
+- `@Mapping(target = "productoId", source = "producto.id")` para leer un campo anidado
+  (`detalle.getProducto().getId()`) directo, sin escribirlo a mano — MapStruct genera el
+  null-check solo.
+- Cuando los tipos no coinciden (`Long productoId` en el DTO vs `Producto producto` en la
+  Entity), se declara un método `default Producto map(Long id) { ... }` en la misma
+  interfaz — MapStruct lo detecta solo y lo usa donde haga falta esa conversión.
+- **`INSTANCE`, no `@Inject`**: con `componentModel` por default (el que usamos aquí),
+  MapStruct genera una clase normal instanciable con `Mappers.getMapper(...)`, no un bean
+  CDI — por eso en `ProductoServiceImpl`/`FacturaServiceImpl` se guarda en un campo
+  `private final ProductoMapper productoMapper = ProductoMapper.INSTANCE;`, no se inyecta.
+  (Existe `@Mapper(componentModel = "cdi")` para que sí sea inyectable, no se usó aquí por
+  mantenerlo simple.)
+- **`pom.xml`**: hace falta declarar `maven-compiler-plugin` con `annotationProcessorPaths`
+  listando Lombok + `mapstruct-processor` + `lombok-mapstruct-binding` — en cuanto declaras
+  esa lista para agregar uno, tienes que poner TODOS los que ya estabas usando (Lombok
+  incluido), si no dejan de correr en silencio. `lombok-mapstruct-binding` es el puente que
+  hace que MapStruct sí vea los getters/setters que Lombok genera en las `Entity`.
 
 ### ¿Qué anotación va en qué capa? (no mezclar librerías)
 

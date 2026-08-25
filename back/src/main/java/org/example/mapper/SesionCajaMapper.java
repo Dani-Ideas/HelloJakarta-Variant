@@ -24,7 +24,10 @@ public final class SesionCajaMapper {
         dto.setCajero(sesion.getCajero());
         dto.setLocacion(sesion.getLocacion());
         dto.setFacturas(sesion.getFacturas().stream()
-                .map(FacturaMapper::toDTO)            // reusa el Mapper que ya existe
+                .map(FacturaMapper.INSTANCE::toDTO)   // FacturaMapper ahora es MapStruct
+                                                        // (interfaz + INSTANCE), ya no un
+                                                        // metodo static -- unico cambio
+                                                        // que le tocaba a este archivo.
                 .collect(Collectors.toList()));
         return dto;
     }

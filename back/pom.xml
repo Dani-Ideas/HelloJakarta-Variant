@@ -30,6 +30,26 @@
             <version>1.18.46</version>
             <scope>provided</scope>
         </dependency>
+        <!-- Declarado explicito porque el IDE no lo estaba resolviendo via transitiva
+             de jakarta.jakartaee-api (mvn si lo resolvia solo, pero mejor no depender
+             de eso). Igual que las otras dos: provided, GlassFish 8 trae la implementacion. -->
+        <dependency>
+            <groupId>jakarta.data</groupId>
+            <artifactId>jakarta.data-api</artifactId>
+            <version>1.0.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- MapStruct: genera la implementacion del Mapper en tiempo de compilacion a
+             partir de una interfaz (nosotros ya no escribimos ProductoMapper/FacturaMapper
+             a mano), mismo espiritu que Jakarta Data con el Repository. Esta si va
+             empaquetada en el WAR (compile, no provided): a diferencia de las APIs de
+             arriba, el codigo generado lo necesita en tiempo de ejecucion, GlassFish no
+             lo trae puesto. -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>1.6.3</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -81,6 +101,37 @@
                 <version>3.4.0</version>
                 <configuration>
                     <failOnMissingWebXml>false</failOnMissingWebXml>
+                </configuration>
+            </plugin>
+            <!-- Declarado explicito (antes no hacia falta un maven-compiler-plugin propio,
+                 javac encontraba solo el procesador de anotaciones de Lombok en el
+                 classpath). En cuanto se declara annotationProcessorPaths para agregar
+                 MapStruct, HAY que listar Lombok tambien aqui: si no, declarar la lista
+                 desactiva el escaneo automatico y Lombok deja de correr silenciosamente.
+                 lombok-mapstruct-binding es el puente que hace que MapStruct SI vea los
+                 getters/setters que Lombok genera (si no, MapStruct los procesa antes de
+                 que Lombok los haya generado, y no encuentra nada). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>1.18.46</version>
+                        </path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>1.6.3</version>
+                        </path>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok-mapstruct-binding</artifactId>
+                            <version>0.2.0</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
         </plugins>

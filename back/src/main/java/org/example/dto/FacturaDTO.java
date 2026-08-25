@@ -3,32 +3,26 @@ package org.example.dto;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-@Getter
-@Setter
-@NoArgsConstructor
-public class FacturaDTO {
+public record FacturaDTO(
+        Long id,
 
-    private Long id;
+        @NotBlank(message = "El numero de factura es obligatorio")
+        String numero,
 
-    @NotBlank(message = "El numero de factura es obligatorio")
-    private String numero;
+        LocalDate fecha,
 
-    private LocalDate fecha;
+        @NotBlank(message = "El cliente es obligatorio")
+        String cliente,
 
-    @NotBlank(message = "El cliente es obligatorio")
-    private String cliente;
+        BigDecimal total,
 
-    private BigDecimal total;
-
-    @NotEmpty(message = "La factura debe tener al menos un detalle")
-    @Valid
-    private List<FacturaDetalleDTO> detalles;
+        @NotEmpty(message = "La factura debe tener al menos un detalle")
+        @Valid
+        List<FacturaDetalleDTO> detalles
+) {
 }
