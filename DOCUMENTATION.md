@@ -1,12 +1,18 @@
 # HelloJakarta — Documentación de referencia
 
-Proyecto de práctica para familiarizarse con **Jakarta EE 10** (RESTful Web Services 3.1,
-Enterprise Beans 4.0, Persistence 3.1) sobre **GlassFish 7.0.26**, antes de tocar el
+Proyecto de práctica para familiarizarse con Jakarta EE sobre GlassFish, antes de tocar el
 proyecto real del trabajo. Nada de esto es producción.
 
-- Java: 17
+**Desde que se agregó Jakarta Data (`CrudRepository`), el proyecto corre sobre Jakarta
+EE 11 / GlassFish 8**, no GlassFish 7 (ver sección 1.1 y `Documentation/bitacora-fixes.md`
+incidente #11 para el porqué). GlassFish 7 se dejó instalado y sin tocar, solo ya no es el
+servidor de despliegue de este proyecto.
+
+- Java: **21** (antes 17 — lo exige GlassFish 8; hay que compilar con
+  `JAVA_HOME=.../java-21-openjdk`)
 - Build tool: Maven
-- Servidor: Eclipse GlassFish 7.0.26 (Jakarta EE Platform, full profile)
+- Servidor: **Eclipse GlassFish 8.0.4** (Jakarta EE 11, full profile) — puertos corridos
+  para poder tener GF7 y GF8 instalados a la vez, ver sección 2
 - Base de datos: Apache Derby embebida en GlassFish (`DerbyPool` / `jdbc/__default`)
 
 ---
@@ -46,25 +52,46 @@ propia), aquí el WAR también trae el frontend embebido — ver `Documentation/
 Todo lo de abajo vive bajo `back/src/main/java/` (el backend es una carpeta hermana de
 `frontend/` — ver `Documentation/frontend.md` sección 3 para el árbol completo del repo).
 
+### 1.1 Dos patrones de Repository conviven ahora mismo (migración en progreso)
+
+El proyecto está a mitad de una migración: `Producto` y `Factura` ya usan **Jakarta Data
+(`CrudRepository`)**; `SesionCaja` y `Usuario` todavía usan el **Repository escrito a mano**
+original. Los dos son válidos y conceptualmente el mismo patrón (interfaz en `lib/`,
+implementación que persiste sin saber de negocio) — la diferencia es quién escribe esa
+implementación:
+
 ```
 org/example/
-├── model/   Entity (JPA)              → mapea tablas: Producto, Factura, FacturaDetalle
+├── model/   Entity (JPA)              → mapea tablas: Producto, Factura, FacturaDetalle,
+│              SesionCaja, Usuario
 ├── dto/     DTO                       → contrato JSON hacia el cliente (React u otro)
 ├── mapper/  Mapper                    → traduce Entity <-> DTO (clases estaticas, sin estado)
-├── lib/     INTERFACES (contratos)    → Repository<T,ID>, Service<D,ID>, y las especificas
-│              de cada entidad (ProductoRepository, ProductoService, FacturaRepository,
-│              FacturaService). Nadie fuera de ejb/ conoce las clases concretas.
+├── lib/     INTERFACES (contratos)
+│     ├── Repository<T,ID> / Service<D,ID>   → contrato generico compartido (patron viejo)
+│     ├── ProductoRepository, FacturaRepository  → @Repository de Jakarta Data,
+│     │     extends CrudRepository<T,ID> -- SIN implementacion escrita a mano
+│     ├── SesionCajaRepository, UsuarioRepository → extends Repository<T,ID> (patron
+│     │     viejo) -- SI tienen implementacion en ejb/
+│     └── ProductoService, FacturaService, SesionCajaService, UsuarioService → todos
+│           iguales, esto no cambio (la Service SIEMPRE se escribe a mano, tenga o no
+│           Jakarta Data el Repository de abajo)
 └── ejb/     IMPLEMENTACIONES (@Stateless/@Singleton)
-               ├── AbstractRepository<T,ID>  → logica JPA compartida (crear/listar/
-               │     buscarPorId/eliminar), heredada por *RepositoryImpl
-               ├── ProductoRepositoryImpl, FacturaRepositoryImpl → EntityManager aqui,
-               │     nada de logica de negocio (solo persistir lo que se les pase)
-               ├── ProductoServiceImpl, FacturaServiceImpl → logica de negocio +
-               │     conversion Entity<->DTO (via Mapper) + transacciones
+               ├── AbstractRepository<T,ID>  → logica JPA compartida del patron viejo,
+               │     heredada por SesionCajaRepositoryImpl/UsuarioRepositoryImpl.
+               │     Producto/Factura YA NO la usan -- no se borra todavia porque
+               │     SesionCaja/Usuario siguen dependiendo de ella.
+               ├── ProductoServiceImpl, FacturaServiceImpl, SesionCajaServiceImpl,
+               │     UsuarioServiceImpl → logica de negocio + conversion Entity<->DTO
+               │     (via Mapper) + transacciones. Inyectan su Repository con @Inject
+               │     si es Jakarta Data, @EJB si es el patron viejo (ver 3.x)
                └── DatosIniciales (@Singleton @Startup) → siembra productos de ejemplo
 rest/        JAX-RS (@Path)            → expone HTTP, solo habla en DTO, inyecta las
-               interfaces de lib/ (nunca las clases de ejb/ directamente)
+               interfaces de Service (nunca las implementaciones directamente)
 ```
+
+Detalle completo de la migración, el porqué (Jakarta Data no existe en Jakarta EE 10, hubo
+que subir a GlassFish 8), y un bug real encontrado en el camino: `Documentation/bitacora-fixes.md`
+incidente #11.
 
 **Por qué interfaz + implementación separadas** (patrón Repository, con inyección
 polimórfica): cualquier bean que necesite un repositorio o servicio inyecta la **interfaz**
@@ -109,7 +136,32 @@ interfaces (`lib`), nunca implementaciones concretas (`ejb`).
 
 ## 2. Comandos de GlassFish (cheat sheet)
 
-Todos se corren desde:
+Hay **dos instalaciones de GlassFish en paralelo** — este proyecto se despliega en la 8,
+no en la 7 (ver 1.1). GF7 se dejó intacto por si algún día hace falta comparar/volver.
+
+| | GlassFish 7 (ya no se usa para este proyecto) | **GlassFish 8 (el que se usa)** |
+|---|---|---|
+| Carpeta | `.../SanboxTEST/glassfish7/glassfish/bin` | `.../SanboxTEST/glassfish8/glassfish/bin` |
+| JDK | 17 (default de la máquina) | **21** — `export JAVA_HOME=.../java-21-openjdk` antes de cualquier `asadmin`/`mvn` |
+| Puerto HTTP | 8080 | **8081** |
+| Puerto admin | 4848 | **4849** — hay que pasar `--port 4849` en cualquier comando remoto de `asadmin` |
+| Puerto Derby | 1527 | **1628** — hay que pasar `--dbport 1628` al hacer `start-database` |
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+cd /home/robute/Documentos/codes/SanboxTEST/glassfish8/glassfish/bin
+
+./asadmin start-domain                              # arranca GF8 (usa el puerto 4849 solo)
+./asadmin start-database --dbport 1628              # Derby de GF8, puerto propio
+./asadmin --port 4849 deploy --force=true <ruta.war>
+./asadmin --port 4849 ping-connection-pool DerbyPool
+./asadmin stop-domain
+```
+
+**URLs de GF8**: app en `http://localhost:8081/HelloJakarta-variante/`, admin console en
+`http://localhost:4849`.
+
+Todos los comandos de GF7 de abajo siguen funcionando igual, corridos desde:
 
 ```bash
 cd /home/robute/Documentos/codes/SanboxTEST/glassfish7/glassfish/bin
@@ -225,6 +277,40 @@ public class ProductoRepositoryImpl extends AbstractRepository<Producto, Long>
 El `Service` (capa de negocio) inyecta el `Repository` **por interfaz**, nunca la clase
 concreta — así el Service ni se entera de si por debajo hay JPA, otra base de datos, o
 incluso datos de prueba en memoria (útil, entre otras cosas, para tests).
+
+### Jakarta Data (`CrudRepository`) — versión oficial de lo mismo, sin escribir el `*Impl`
+
+Requiere Jakarta EE **11** (no existe en la 10 — por eso el proyecto corre en GlassFish 8,
+ver sección 2). La idea es la misma que el "Patrón Repository" de arriba, pero la
+implementación **la genera el proveedor** (EclipseLink, en tiempo de despliegue) a partir
+de la interfaz — no se escribe ningún `*RepositoryImpl` a mano, y por lo tanto tampoco
+hace falta un `AbstractRepository` compartido.
+
+```java
+// lib/ProductoRepository.java -- esto es TODO el archivo, no hay ejb/ProductoRepositoryImpl
+import jakarta.data.repository.CrudRepository;
+import jakarta.data.repository.Repository;
+
+@Repository
+public interface ProductoRepository extends CrudRepository<Producto, Long> {
+}
+```
+
+- `CrudRepository<T,K>` trae `insert(T)` `save(T)` `update(T)` `delete(T)` `deleteById(K)`
+  `findById(K)` `findAll()` ya implementados — no se escriben.
+- **Se inyecta con `@Inject` (CDI), no `@EJB`** — un repositorio Jakarta Data es un bean
+  CDI, no un `@Stateless` escrito a mano.
+- `findAll()` devuelve `Stream<T>`, no `List<T>`.
+- `findById(id)` devuelve `Optional<T>`, no la entidad ni `null` directo — usar
+  `.orElse(null)` si el resto del código espera `null` para "no existe".
+- `update(entidad)` espera la entidad **ya modificada** — no hay copiado selectivo de
+  campos como el `aplicarCambios` del patrón viejo. Ese copiado (ej. "solo actualizar
+  `numero`/`fecha`/`cliente` de una Factura, no `detalles`") se escribe a mano en el
+  `ServiceImpl`: `findById` → mutar campos permitidos → `update`.
+- **Bug real encontrado y su arreglo** (`insert()`/`save()` no traen el `id` generado en
+  el objeto de vuelta): hay que inyectar un `EntityManager` en el `ServiceImpl` solo para
+  forzar `em.flush()` justo después del `insert()`. Detalle completo, con el porqué
+  funciona, en `Documentation/bitacora-fixes.md` incidente #11.
 
 ### Jakarta RESTful Web Services (JAX-RS)
 

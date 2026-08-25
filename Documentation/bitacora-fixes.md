@@ -358,3 +358,97 @@ curl -X POST http://localhost:8080/HelloJakarta-variante/api/sesiones-caja \
 
 curl http://localhost:8080/HelloJakarta-variante/api/sesiones-caja
 ```
+
+---
+
+## 11. Migración a Jakarta Data (`CrudRepository`) — GlassFish 7 no alcanza, hubo que subir a GlassFish 8
+
+**Motivo del cambio:** se necesitaba usar `jakarta.data.repository.CrudRepository` de verdad
+(requisito no negociable). Ese módulo **no existe en Jakarta EE 10** — es parte de
+**Jakarta EE 11**, que GlassFish 7.0.26 no implementa. Se verificó antes de tocar nada:
+`glassfish7/glassfish/modules/` no tiene ningún jar `jakarta.data*`, y el EclipseLink que
+trae (4.0.5) es anterior a la serie 5.0 que sí implementa Jakarta Data.
+
+### Qué se instaló (sin tocar lo que ya funcionaba)
+
+- **GlassFish 8.0.4** instalado en paralelo a GlassFish 7, en
+  `~/Documentos/codes/SanboxTEST/glassfish8/` — GlassFish 7 sigue intacto, sin desplegar
+  nada nuevo ahí.
+- **JDK 21** (`jdk21-openjdk`, vía pacman) — GlassFish 8 exige JDK 21+. El JDK 26 que ya
+  estaba instalado en la máquina **no sirvió**: al arrancar con él, GlassFish 8 tronaba con
+  errores de OSGi/Felix (`Unable to resolve ... osgi.ee=JavaSE;version=1.8`) — el
+  framework de módulos interno de GlassFish 8 todavía no reconoce JDK 26 como plataforma
+  válida. JDK 21 (LTS) sí arranca limpio.
+- Puertos de `domain1` de GlassFish 8 **corridos +1 o +100** para poder tener los dos
+  servidores levantados al mismo tiempo sin chocar: HTTP `8080→8081`, admin `4848→4849`,
+  HTTPS `8181→8182`, JMX `8686→8687`, IIOP `3700/3820/3920 → 3701/3821/3921`, y el puerto
+  del Derby Network Server propio de GF8 `1527→1628` (cambiado en dos lugares: la
+  propiedad `PortNumber` del `DerbyPool` en `domain.xml`, **y** el flag `--dbport` al
+  correr `asadmin start-database` — son dos cosas distintas, cambiar solo una no alcanza).
+- Comandos remotos de `asadmin` contra GF8 necesitan `--port 4849` explícito (si no, por
+  default intenta `4848`, que es el puerto de GF7).
+
+### El proyecto ahora apunta a Jakarta EE 11 / GlassFish 8
+
+- `back/pom.xml`: `jakarta.jakartaee-api` de `10.0.0` → `11.0.0`, `maven.compiler.release`
+  de `17` → `21` (hay que compilar con `JAVA_HOME=.../java-21-openjdk`, si no
+  `mvn` usa el JDK 17 default de la máquina y falla al pedir `--release 21`).
+- `persistence.xml`: schema `persistence_3_0.xsd` → `persistence_3_2.xsd`, `version="3.2"`.
+
+### Bug real encontrado: `insert()` no trae el `id` en la respuesta (otra vez)
+
+Mismo síntoma que el incidente #10 (bug A) — el `POST` respondía sin `id` aunque el
+`INSERT` sí se ejecutaba bien en la base (se veía el registro correcto en el `GET`
+siguiente). Se probó `save()` en vez de `insert()`: mismo problema. Root cause: el
+`CrudRepository` que genera el proveedor de Jakarta Data (EclipseLink 5.0.1, vía el puente
+JNoSQL que usa GlassFish 8 para exponer también entidades JPA/relacionales, no solo NoSQL)
+no fuerza un flush inmediato — igual que antes, la fila se inserta en la transacción, pero
+el id `IDENTITY` no se sincroniza de vuelta al objeto devuelto hasta el commit.
+
+**No hay forma de arreglarlo dentro del Repository** como la vez pasada (`AbstractRepository`
+ya no existe para esa entidad — Jakarta Data no deja escribir cuerpo de método en la
+interfaz). Fix real: inyectar un `EntityManager` en el `ServiceImpl` **solo** para forzar
+el `flush()` justo después de `insert()`:
+
+```java
+@PersistenceContext(unitName = "HelloJakartaPU")
+private EntityManager em;
+
+// ...
+Producto creado = productoRepository.insert(entidad);
+em.flush();   // sin esto, creado.getId() es null
+```
+
+Funciona porque ese `EntityManager` inyectado comparte el mismo contexto de persistencia
+que usa el repositorio generado — misma transacción JTA, misma unidad de persistencia
+(`HelloJakartaPU`) — así que el flush de un lado sincroniza al otro.
+
+### Otros cambios de sintaxis, ya confirmados con pruebas reales (`curl`)
+
+- **Inyección**: `@EJB` → `@Inject` para cualquier `lib.XRepository` — ya no son
+  `@Stateless` escritos a mano, son beans CDI generados por el proveedor.
+- **`findAll()` devuelve `Stream<T>`, no `List<T>`** — quita el `.stream()` que antes se
+  encadenaba después de `listar()`.
+- **`findById(id)` devuelve `Optional<T>`**, no la entidad directa o `null` — usar
+  `.orElse(null)` para conservar el mismo contrato que tenían `ProductoService`/
+  `FacturaService` (null → 404 en el Resource).
+- **Nombres de método**: `crear`→`insert` (o `save`), `listar`→`findAll`,
+  `buscarPorId`→`findById`, `eliminar`→`deleteById` (recibe el `id`, no la entidad;
+  también existe `delete(entidad)`), y `actualizar`→`update` (recibe la entidad completa
+  ya modificada, no hace merge selectivo de campos).
+- **El copiado selectivo de campos en `actualizar`** (ej. solo tocar `numero`/`fecha`/
+  `cliente` de una `Factura`, sin tocar `detalles`/`total`) ya no puede vivir en el
+  Repository (no hay dónde escribirlo) — se movió al `ServiceImpl`: buscar la entidad con
+  `findById`, mutar los campos permitidos a mano, y recién ahí llamar `update(entidad)`.
+- **Las excepciones de negocio (ej. conflicto de FK al borrar) se siguen envolviendo en
+  `EJBException`**, exactamente igual que antes — porque quien las deja escapar sigue
+  siendo un método `@Stateless` (`ProductoServiceImpl.eliminar`), sin importar que el
+  `Repository` que inyecta ya no sea un EJB escrito a mano. Confirmado revisando
+  `server.log` de GlassFish 8 tras forzar el conflicto real con `curl`.
+
+### Estado actual (migración parcial, a propósito)
+
+`Producto` y `Factura` ya están migrados a `CrudRepository`, probados end-to-end
+(GET/POST/PUT/DELETE, 404, 409 por FK) contra GlassFish 8 real. `SesionCaja` y `Usuario`
+siguen con el patrón viejo (`AbstractRepository`) por ahora — mientras sigan así,
+`AbstractRepository.java` no se puede borrar todavía, todavía lo usan esas dos entidades.

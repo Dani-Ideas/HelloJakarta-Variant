@@ -1,12 +1,14 @@
 package org.example.lib;
 
+import jakarta.data.repository.CrudRepository;
+import jakarta.data.repository.Repository;
 import org.example.model.Factura;
 
-// Factura SI expone actualizar (corregir datos de encabezado como cliente/fecha), pero
-// deliberadamente NO expone eliminar por REST -- borrar una factura ya emitida no tiene
-// sentido de negocio real, por eso Repository.eliminar() nunca se usa desde el Resource
-// para esta entidad aunque el metodo generico exista.
-public interface FacturaRepository extends Repository<Factura, Long> {
-
-    Factura actualizar(Long id, Factura cambios);
+// Jakarta Data: sin implementacion escrita a mano (no hay FacturaRepositoryImpl en ejb/).
+// El "actualizar" con copiado de campos de encabezado ahora vive en FacturaServiceImpl.
+// FacturaResource deliberadamente no expone @DELETE para esta entidad -- borrar una
+// factura ya emitida no tiene sentido de negocio real -- aunque deleteById() exista
+// heredado de CrudRepository.
+@Repository
+public interface FacturaRepository extends CrudRepository<Factura, Long> {
 }

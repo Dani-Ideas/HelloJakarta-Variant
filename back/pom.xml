@@ -10,15 +10,18 @@
     <packaging>war</packaging>
 
     <properties>
-        <maven.compiler.release>17</maven.compiler.release>
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
     <dependencies>
+        <!-- 11.0.0, no 10.0.0: Jakarta Data (CrudRepository) es parte de la plataforma
+             a partir de Jakarta EE 11, no existe en la 10 que usaba GlassFish 7. Por eso
+             este proyecto ahora se despliega en GlassFish 8 (JDK 21+), no en GlassFish 7. -->
         <dependency>
             <groupId>jakarta.platform</groupId>
             <artifactId>jakarta.jakartaee-api</artifactId>
-            <version>10.0.0</version>
+            <version>11.0.0</version>
             <scope>provided</scope>
         </dependency>
         <dependency>

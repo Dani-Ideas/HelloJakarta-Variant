@@ -72,7 +72,12 @@ public class ProductoResource {
             }
             return Response.noContent().build();
         } catch (EJBException e) {
-            // Ocurre cuando el producto esta referenciado por una FacturaDetalle (llave foranea)
+            // Ocurre cuando el producto esta referenciado por una FacturaDetalle (llave
+            // foranea). Confirmado con Jakarta Data tambien: aunque el Repository ahora lo
+            // genera el proveedor (CDI), el metodo que lo llama (eliminar(), en
+            // ProductoServiceImpl) sigue siendo un @Stateless -- cualquier RuntimeException
+            // que se escape de un metodo EJB llega envuelta en EJBException, sin importar
+            // de donde vino la excepcion original.
             return Response.status(Response.Status.CONFLICT)
                     .entity(Map.of("error", "No se puede eliminar: el producto esta siendo usado en una o mas facturas"))
                     .build();
