@@ -153,48 +153,82 @@ HTTP. Toda la conversión Entity↔DTO se movió una capa más adentro (FASE 5).
 
 ### FASE 5 — Entra el Service (negocio), que llama al Repository
 
+> **Actualizado**: desde la migración a Jakarta Data (`Documentation/bitacora-fixes.md`
+> incidente #11), esto ya NO se ve como abajo estaba antes. Ya no existe `@EJB` para
+> inyectar el Repository, ni un `AbstractRepository` escrito a mano — ver el código real,
+> actual, tal cual vive hoy en el repo:
+
 ```java
 // ejb/ProductoServiceImpl.java
 @Stateless
 public class ProductoServiceImpl implements ProductoService {
 
-    @EJB
-    private ProductoRepository productoRepository;   // otra interfaz, de lib/
+    @Inject                                    // CDI, no @EJB -- ver mas abajo el porque
+    private ProductoRepository productoRepository;   // interfaz de lib/, Jakarta Data
+
+    private final ProductoMapper productoMapper = ProductoMapper.INSTANCE;   // MapStruct
 
     @Override
     public List<ProductoDTO> listar() {
-        return productoRepository.listar().stream()
-                .map(ProductoMapper::toDTO)
+        return productoRepository.findAll()        // Stream<Producto>, no List
+                .map(productoMapper::toDTO)         // instancia MapStruct, no metodo static
                 .collect(Collectors.toList());
     }
 }
 ```
-Dos cosas pasan aquí:
-1. `productoService.listar()` (llamado desde el Resource) en realidad ejecuta ESTE método,
-   porque `ProductoServiceImpl` es la implementación real de la interfaz `ProductoService`.
-2. Aquí adentro se inyecta **otra** interfaz, `ProductoRepository` (también de `lib/`),
-   resuelta a `org.example.ejb.ProductoRepositoryImpl`. El contenedor EJB ya abrió una
-   transacción JTA por detrás desde que entró a este método (default `REQUIRED`); cuando la
-   llamada entra a `ProductoRepositoryImpl` un renglón después, **se une a esa misma
-   transacción**, no abre una nueva — es la misma regla que ya conocías, solo que ahora
-   cruza un bean más.
+Tres cosas pasan aquí, y las tres cambiaron respecto a como era antes de la migración:
 
-### FASE 6 — Entra JPA/EclipseLink y toca la base real
+1. `productoService.listar()` (llamado desde el Resource) en realidad ejecuta ESTE método,
+   porque `ProductoServiceImpl` es la implementación real de la interfaz `ProductoService`
+   — esto no cambió.
+2. Se inyecta **otra** interfaz, `ProductoRepository` (también de `lib/`) — pero con
+   `@Inject` (CDI), no `@EJB`. Motivo: `ProductoRepository` ya no es un `@Stateless`
+   escrito a mano, es un **repositorio Jakarta Data** (`extends CrudRepository<Producto,
+   Long>`) — el proveedor (EclipseLink) genera su implementación en tiempo de despliegue,
+   y ese tipo de bean se inyecta por CDI, no por EJB. La transacción JTA sigue abriéndose
+   igual (default `REQUIRED`) y sigue uniéndose a la misma, eso no cambió.
+3. `ProductoMapper` pasó de ser una clase con métodos `static` a una interfaz generada por
+   **MapStruct** — por eso ahora se llama `productoMapper.toDTO(...)` (una instancia,
+   guardada en `ProductoMapper.INSTANCE`), no `ProductoMapper.toDTO(...)` como método de
+   clase. Detalle completo en `Documentation/DOCUMENTATION.md`, sección "DTOs como
+   `record`, y Mapper con MapStruct".
+
+### FASE 6 — Ya no hay JPQL escrito a mano: `CrudRepository` lo resuelve todo
+
+> **Actualizado**: `AbstractRepository.java` (la clase que armaba el JPQL a mano, tipo
+> `"SELECT e FROM Producto e ORDER BY e.id"`) se **borró por completo** — ya no existe en
+> el proyecto. Esto es lo que la reemplazó:
 
 ```java
-// ejb/AbstractRepository.java -- heredado por ProductoRepositoryImpl
-public List<T> listar() {
-    String jpql = "SELECT e FROM " + getEntityClass().getSimpleName() + " e ORDER BY e.id";
-    return em.createQuery(jpql, getEntityClass()).getResultList();
+// lib/ProductoRepository.java -- este archivo esta COMPLETO, no le falta nada
+@Repository
+public interface ProductoRepository extends CrudRepository<Producto, Long> {
 }
 ```
-- `em` viene inyectado vía `@PersistenceContext(unitName = "HelloJakartaPU")` → cadena
-  completa en `persistencia-derbypool.md`.
-- EclipseLink traduce el JPQL a SQL real, lo manda a Derby (puerto 1527), recibe filas
-  crudas, y las convierte en objetos `Producto` (hidratación, usando `@Column` para saber
-  qué columna va en qué campo).
-- Esto regresa un `List<Producto>` (entidades) hacia `ProductoServiceImpl` — que es
-  exactamente donde entra el `.map(ProductoMapper::toDTO)` que ya viste en la FASE 5.
+
+No hay ningún `ProductoRepositoryImpl.java` en `ejb/` — no existe el archivo. Cuando
+GlassFish despliega la app, EclipseLink lee esta interfaz y **genera una clase real** que
+la implementa (podrías pensarlo como un "Lombok para Repositories": tú declaras el
+contrato, la herramienta escribe el cuerpo). Esa clase generada es la que:
+
+- Arma el `SELECT` real (equivalente al JPQL que antes se armaba a mano con
+  `getEntityClass().getSimpleName()`).
+- Usa un `EntityManager` por dentro — pero ya no es un `EntityManager` que tú inyectes ni
+  veas en ningún `ServiceImpl` de `Producto`/`Factura`.
+- Traduce el SQL final, lo manda a Derby, y convierte las filas crudas en objetos
+  `Producto` (hidratación, usando `@Column` para saber qué columna va en qué campo) —
+  exactamente igual que antes, solo que ese trabajo ya no está en un archivo que tú
+  escribiste.
+
+Esto regresa un `Stream<Producto>` (entidades) hacia `ProductoServiceImpl` — que es
+exactamente donde entra el `.map(productoMapper::toDTO)` que ya viste en la FASE 5.
+
+**Nota sobre `IDENTITY` vs `SEQUENCE`**: si te preguntas cómo `insert()` puede devolver el
+`id` ya poblado sin que nadie llame a `flush()` en ningún lado — es porque `Producto.id`
+usa `GenerationType.SEQUENCE` (el id se reserva antes del `INSERT` real). Con la estrategia
+vieja (`IDENTITY`) sí hacía falta forzar un `flush()` a mano; el detalle completo, con
+diagramas de secuencia mostrando la diferencia, está en
+`Documentation/evolucion-arquitectura.md` sección 5.
 
 ### FASE 7 — De Java a JSON, y de vuelta a React
 
@@ -217,13 +251,13 @@ Derby (archivo en disco)
    │  SQL
    ▼
 EclipseLink (fila → objeto Producto)
-   │  JPQL/EntityManager
+   │  generado por Jakarta Data a partir de ProductoRepository (lib/) -- sin Impl escrito a mano
    ▼
-ProductoRepositoryImpl.listar()  [ejb, extiende AbstractRepository -- solo datos]
-   │  List<Producto>
+ProductoRepository.findAll()  [interfaz @Repository, extends CrudRepository -- solo datos]
+   │  Stream<Producto>
    ▼
 ProductoServiceImpl.listar()  [ejb, @Stateless -- aqui pasa Entity -> DTO via Mapper]
-   │  ProductoMapper.toDTO()  [Producto → ProductoDTO]
+   │  productoMapper.toDTO()  [MapStruct, Producto → ProductoDTO]
    ▼
 ProductoResource.listar()  [rest, JAX-RS -- solo delega, ya recibe DTO listo]
    │  JSON-B: List<ProductoDTO> → texto JSON
