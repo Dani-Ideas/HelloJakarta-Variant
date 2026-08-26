@@ -497,3 +497,134 @@ Probado end-to-end contra GlassFish 8: `POST`/`PATCH` de `Producto`, `POST` de `
 con mapeo de relación (`productoId` → `Producto`, incluyendo el precio recalculado en
 servidor), `PATCH` de `Factura`, `DELETE` con conflicto de FK (409), y `GET /sesiones-caja`
 para confirmar que el cambio de una línea en `SesionCajaMapper` no rompió nada.
+
+---
+
+## 13. GlassFish 8 reinicia y la app queda "enabled" pero rota: orden de arranque
+
+**Síntoma:** después de reiniciar el dominio de GF8 (`start-domain`), `list-applications`
+mostraba `HelloJakarta-variante <ejb, web> enabled`, pero cualquier endpoint de la API
+(`GET /api/productos`) respondía `404` — ni siquiera el error 500 esperado de un problema
+de base de datos, un 404 plano como si la app no existiera.
+
+**Root cause:** GlassFish, al arrancar el dominio, intenta recargar automáticamente
+cualquier app que ya tenía desplegada de una sesión anterior — eso es normal y esperado
+(no hace falta re-`deploy` cada vez que se reinicia la máquina). El problema es el orden:
+esa recarga ocurre **antes** de que Derby (que corre como proceso de red aparte,
+`start-database`) esté disponible, si Derby no se había arrancado todavía. El log
+(`server.log`) mostraba `java.net.ConnectException: Connection refused` al intentar
+conectar al pool `DerbyPool`, seguido de `Application deployment failed: Exception while
+loading the app`. La app queda registrada (por eso `enabled` en el listado) pero nunca
+terminó de cargar de verdad — cualquier petición cae en un 404 genérico del servlet
+container, no en un error de la aplicación.
+
+**Fix:** una vez confirmado que Derby ya responde (`ping-connection-pool DerbyPool` da
+`Command ... executed successfully`), volver a desplegar el mismo `.war` con
+`deploy --force=true` —
+no hace falta recompilar nada, el archivo no cambió, la app solo necesitaba cargar de
+nuevo con la base ya disponible.
+
+**Regla para la próxima vez que se reinicie la máquina/el dominio:** siempre
+`start-database` **antes** de `start-domain`, nunca al revés. Documentado en la sección 2
+de `DOCUMENTATION.md`, con el orden correcto en el cheat sheet.
+
+---
+
+## 14. `ProductoResource` mezclaba HTTP con manejo de excepciones de negocio — refactor a `ExceptionMapper`
+
+**Motivo:** el `@DELETE` de `ProductoResource` tenía un `try/catch (EJBException e)` adentro
+del Resource, asumiendo a ciegas que cualquier `EJBException` significaba conflicto de FK.
+Dos problemas reales con eso: (1) el `Resource` (que solo debería traducir HTTP↔método)
+terminaba sabiendo detalles de EJB e infraestructura, y (2) si la `EJBException` viniera de
+otra causa (timeout, conexión caída), igual se le devolvía al cliente el mensaje de
+"producto en uso", que sería falso.
+
+**Fix**, siguiendo el mismo patrón que ya existía en el proyecto (`ValidationExceptionMapper`,
+para los 400 de Bean Validation):
+
+- Nueva excepción de negocio `lib/RecursoEnUsoException`, marcada con
+  `@ApplicationException(rollback = true)` — sin esa anotación, el contenedor EJB envuelve
+  CUALQUIER `RuntimeException` que escape de un método `@Stateless` en una `EJBException`
+  genérica (así es como EJB trata "excepciones de sistema" por default). Con la anotación,
+  el contenedor la deja pasar intacta.
+- Nuevo `rest/RecursoEnUsoExceptionMapper` (`@Provider`), que traduce esa excepción a `409`
+  con un JSON limpio — el `Resource` ya no tiene ningún `try/catch`.
+- `ProductoServiceImpl.eliminar()` ya no asume que cualquier fallo es un conflicto de FK:
+  recorre la cadena real de causas (`getCause()` en bucle) buscando específicamente
+  `SQLIntegrityConstraintViolationException`. Si no es eso, deja pasar la excepción
+  original tal cual — no inventa un mensaje de negocio que no aplica.
+- `POST` de `Producto`/`Factura` ahora agrega el header `Location` con la URI del recurso
+  creado (`Response.created(uri)` en vez de `Response.status(CREATED)`), y `GET listar()`
+  en ambos se estandarizó a devolver `Response.ok(...)` en vez de una `List` cruda —
+  consistencia con el resto de los endpoints.
+
+**Bug real encontrado al probar el fix** (con `curl`, no en teoría): el primer intento del
+`DELETE` con conflicto de FK devolvió un `500` crudo de GlassFish con el stack trace
+completo expuesto en el HTML de error — exactamente el tipo de fuga de información que se
+quería evitar. Causa: `productoRepository.deleteById(id)` (Jakarta Data) **no ejecuta el
+`DELETE` real de inmediato** — JPA difiere la escritura hasta el flush/commit de la
+transacción, que en un bean CMT ocurre **después** de que el método `eliminar()` ya había
+regresado `true`. El `catch` nunca llegaba a ver la excepción porque ya había salido del
+`try`. Fix: agregar `em.flush()` justo después de `deleteById(id)`, dentro del mismo
+`try` — mismo patrón que ya se usa en `crear()` para sincronizar el `id` generado (ver
+incidente #11), aquí para sincronizar el momento en que el error de integridad puede
+atraparse. Confirmado con `curl` después del fix: `409` limpio en conflicto, `204` en
+borrado real, `404` en id inexistente.
+
+**Revisión posterior — se simplificó de nuevo**: el `try/catch` + `em.flush()` del
+`DELETE` de arriba se reemplazó por algo más simple: un `EJBExceptionMapper` (`@Provider`)
+que atrapa la `EJBException` en el límite HTTP, sin importar si el fallo real ocurre
+dentro del método o al hacer commit después de que ya regresó. Con esto,
+`ProductoServiceImpl.eliminar()` volvió a ser trivial — sin `try/catch`, sin
+`EntityManager`, sin la excepción custom `RecursoEnUsoException` (se borró, ya no hace
+falta). Este mapper de paso también cubre cualquier otra `EJBException` no reconocida en
+cualquier Resource con un mensaje genérico, en vez de dejar escapar un `500` crudo con el
+stack trace completo — eso sí era una fuga de información real.
+
+**Lo que NO se pudo eliminar, y por qué (probado con `curl`, no asumido)**: el `em.flush()`
+de `crear()` (`insert()` seguido de `flush()`) sí sigue siendo necesario. Se probó
+quitándolo y mandando 4 `POST` reales — las 4 volvieron con `id: null` en la respuesta,
+consistente, no intermitente. Causa raíz: `Producto`/`Factura` usan
+`GenerationType.IDENTITY`, y con esa estrategia el id no se conoce hasta que el `INSERT`
+real se ejecuta contra la base — EclipseLink lo difiere hasta el commit por default, y
+`CrudRepository` de Jakarta Data no cambia esa regla (usa el mismo `EntityManager` con las
+mismas reglas de JPA por debajo). La única forma de quitar esta necesidad de raíz sería
+cambiar a `GenerationType.SEQUENCE` (reserva el id antes del `INSERT`, sin necesidad de
+forzar nada) — eso es un cambio de esquema real (afecta a las 5 entidades, requiere
+verificar que Derby+EclipseLink lo generen bien en una tabla que ya existe con `IDENTITY`),
+no se hizo en esta sesión.
+
+---
+
+## 15. `EntityManager`/`flush()` eliminados de raíz: `IDENTITY` → `SEQUENCE` en Producto/Factura/FacturaDetalle
+
+Cierre del incidente #11/#14: se implementó el cambio de estrategia que ahí se dejó
+pendiente. `Producto.id`, `Factura.id`, `FacturaDetalle.id` pasaron de
+`GenerationType.IDENTITY` a `GenerationType.SEQUENCE` (con `@SequenceGenerator`,
+`allocationSize = 1` para que los ids sigan siendo consecutivos y fáciles de leer, en vez
+del comportamiento por default de JPA que reserva bloques de 50).
+
+**Por qué esto sí elimina la necesidad de `EntityManager`/`flush()` de raíz**: con
+`SEQUENCE`, el id se reserva **antes** del `INSERT` (una llamada a `nextval` aparte) — el
+proveedor lo conoce de inmediato al llamar `insert()`, sin tener que forzar que el `INSERT`
+real se ejecute. Con `IDENTITY`, el id solo se conoce cuando el motor de base de datos
+ejecuta el `INSERT` de verdad, y EclipseLink lo difiere hasta el commit por default — de
+ahí venía la necesidad del `flush()` manual.
+
+**Requirió un paso destructivo, autorizado explícitamente antes de ejecutarlo**: las tablas
+`PRODUCTO`/`FACTURA`/`FACTURA_DETALLE` ya existían en Derby con la columna `ID` marcada
+`IDENTITY` a nivel de motor — `create-or-extend-tables` no puede alterar esa propiedad en
+una columna existente, solo agrega columnas faltantes. Se borraron esas 3 tablas
+(`DROP TABLE`, vía `ij`) y se dejó que EclipseLink las regenerara solas al desplegar,
+junto con las secuencias nuevas (`PRODUCTO_SEQ`, `FACTURA_SEQ`, `FACTURA_DETALLE_SEQ`).
+Esto borró los datos de prueba que hubiera en esas 3 tablas — aceptable porque eran solo
+datos sintéticos de prueba, nunca datos reales. `SESION_CAJA` y `USUARIO` NO se tocaron
+(siguen con `IDENTITY`, fuera de alcance).
+
+**Resultado, confirmado con `curl`** (4 `POST` reales a `/api/productos`, todos con el `id`
+poblado correctamente y consecutivo — antes, sin el `flush()`, los mismos 4 `POST`
+volvían con `id: null`): `ProductoServiceImpl` y `FacturaServiceImpl` quedaron sin ningún
+`EntityManager`, sin `PersistenceContext`, sin `flush()` — solo inyectan su
+`Repository` (Jakarta Data) y su `Mapper` (MapStruct), nada más. `DELETE` con conflicto de
+FK (`409`, vía `EJBExceptionMapper`), `DELETE` limpio (`204`), y `POST` de `Factura` con
+relación a `Producto` — todo verificado funcionando después del cambio.

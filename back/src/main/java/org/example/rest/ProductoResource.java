@@ -1,7 +1,6 @@
 package org.example.rest;
 
 import jakarta.ejb.EJB;
-import jakarta.ejb.EJBException;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -12,19 +11,22 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
 import org.example.dto.ProductoDTO;
 import org.example.dto.ProductoPatchDTO;
 import org.example.lib.ProductoService;
 
+import java.net.URI;
 import java.util.List;
-import java.util.Map;
 
-// El Resource ya NO mapea Entity<->DTO -- eso ahora vive en ProductoServiceImpl. Aqui
-// solo se traducen llamadas HTTP a llamadas de metodo, y resultados de metodo a
-// respuestas HTTP (codigos de estado). Tambien inyecta la INTERFAZ (org.example.lib),
-// nunca ProductoServiceImpl directamente.
+// El Resource SOLO traduce peticion HTTP -> llamada de metodo, y resultado de metodo ->
+// respuesta HTTP (codigo de estado, headers). No sabe nada de negocio, no sabe nada de
+// EJB/JPA -- el conflicto de FK al borrar se resuelve en el ExceptionMapper
+// (RecursoEnUsoExceptionMapper), no aqui, exactamente igual que ValidationExceptionMapper
+// ya maneja los 400 de Bean Validation sin que ningun Resource tenga que saberlo.
 @Path("/productos")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -33,9 +35,13 @@ public class ProductoResource {
     @EJB
     private ProductoService productoService;
 
+    // Para construir la URI del recurso creado en el header Location del POST.
+    @Context
+    private UriInfo uriInfo;
+
     @GET
-    public List<ProductoDTO> listar() {
-        return productoService.listar();
+    public Response listar() {
+        return Response.ok(productoService.listar()).build();
     }
 
     @GET
@@ -51,7 +57,11 @@ public class ProductoResource {
     @POST
     public Response crear(@Valid ProductoDTO dto) {
         ProductoDTO creado = productoService.crear(dto);
-        return Response.status(Response.Status.CREATED).entity(creado).build();
+        // Response.created(uri) pone el status 201 Y el header Location -- practica
+        // estandar de REST: el cliente sabe donde vive el recurso recien creado sin
+        // tener que adivinar la URL a partir del id que viene en el cuerpo.
+        URI location = uriInfo.getAbsolutePathBuilder().path(String.valueOf(creado.id())).build();
+        return Response.created(location).entity(creado).build();
     }
 
     @PUT
@@ -77,22 +87,10 @@ public class ProductoResource {
     @DELETE
     @Path("/{id}")
     public Response eliminar(@PathParam("id") Long id) {
-        try {
-            boolean eliminado = productoService.eliminar(id);
-            if (!eliminado) {
-                return Response.status(Response.Status.NOT_FOUND).build();
-            }
-            return Response.noContent().build();
-        } catch (EJBException e) {
-            // Ocurre cuando el producto esta referenciado por una FacturaDetalle (llave
-            // foranea). Confirmado con Jakarta Data tambien: aunque el Repository ahora lo
-            // genera el proveedor (CDI), el metodo que lo llama (eliminar(), en
-            // ProductoServiceImpl) sigue siendo un @Stateless -- cualquier RuntimeException
-            // que se escape de un metodo EJB llega envuelta en EJBException, sin importar
-            // de donde vino la excepcion original.
-            return Response.status(Response.Status.CONFLICT)
-                    .entity(Map.of("error", "No se puede eliminar: el producto esta siendo usado en una o mas facturas"))
-                    .build();
+        boolean eliminado = productoService.eliminar(id);
+        if (!eliminado) {
+            return Response.status(Response.Status.NOT_FOUND).build();
         }
+        return Response.noContent().build();
     }
 }

@@ -2,8 +2,6 @@ package org.example.ejb;
 
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import org.example.dto.ProductoDTO;
 import org.example.dto.ProductoPatchDTO;
 import org.example.lib.ProductoRepository;
@@ -29,19 +27,13 @@ public class ProductoServiceImpl implements ProductoService {
     // es el patron estandar de MapStruct para tener un unico mapper reutilizable sin DI.
     private final ProductoMapper productoMapper = ProductoMapper.INSTANCE;
 
-    // EntityManager inyectado SOLO para forzar el flush tras insert(): el repositorio
-    // Jakarta Data generado por el proveedor no sincroniza el id IDENTITY en el objeto
-    // que devuelve (confirmado -- sin este flush, "creado.getId()" viene null). Este
-    // EntityManager SI comparte el mismo contexto de persistencia que usa el repositorio
-    // generado, porque ambos participan de la misma transaccion JTA y la misma unidad de
-    // persistencia (HelloJakartaPU) -- por eso el flush de aqui sincroniza el id alla.
-    @PersistenceContext(unitName = "HelloJakartaPU")
-    private EntityManager em;
-
     @Override
     public ProductoDTO crear(ProductoDTO dto) {
+        // Ya no hace falta EntityManager/flush() aqui: Producto.id ahora usa
+        // GenerationType.SEQUENCE, no IDENTITY -- el id se reserva ANTES del INSERT, asi
+        // que insert() ya lo devuelve poblado sin forzar nada (ver Producto.java y
+        // Documentation/bitacora-fixes.md incidente #15).
         Producto creado = productoRepository.insert(productoMapper.toEntity(dto));
-        em.flush();
         return productoMapper.toDTO(creado);
     }
 
@@ -104,6 +96,10 @@ public class ProductoServiceImpl implements ProductoService {
 
     @Override
     public boolean eliminar(Long id) {
+        // Sin try/catch, sin EntityManager: el conflicto de FK (si lo hay) se detecta en
+        // el limite HTTP, no aqui -- ver rest/EJBExceptionMapper. No importa si el fallo
+        // real ocurre dentro de esta llamada o al hacer commit despues de que este metodo
+        // ya regreso; en cualquier caso, el mapper lo atrapa antes de llegar al cliente.
         if (productoRepository.findById(id).isEmpty()) {
             return false;
         }

@@ -2,8 +2,6 @@ package org.example.ejb;
 
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import org.example.dto.FacturaDTO;
 import org.example.dto.FacturaPatchDTO;
 import org.example.lib.FacturaRepository;
@@ -38,13 +36,6 @@ public class FacturaServiceImpl implements FacturaService {
     // con componentModel por default genera una clase normal, no un bean CDI.
     private final FacturaMapper facturaMapper = FacturaMapper.INSTANCE;
 
-    // Ver ProductoServiceImpl: el repositorio Jakarta Data no sincroniza el id IDENTITY
-    // en el objeto que devuelve insert() -- este EntityManager comparte el mismo contexto
-    // de persistencia (misma transaccion JTA, misma unidad HelloJakartaPU) y el flush()
-    // fuerza esa sincronizacion.
-    @PersistenceContext(unitName = "HelloJakartaPU")
-    private EntityManager em;
-
     @Override
     public FacturaDTO crear(FacturaDTO dto) {
         Factura factura = facturaMapper.toEntity(dto);
@@ -66,8 +57,9 @@ public class FacturaServiceImpl implements FacturaService {
         }
         factura.setTotal(total);
 
+        // Ya no hace falta EntityManager/flush() aqui: Factura.id ahora usa
+        // GenerationType.SEQUENCE, no IDENTITY -- ver ProductoServiceImpl.crear().
         Factura creada = facturaRepository.insert(factura);
-        em.flush();
         return facturaMapper.toDTO(creada);
     }
 

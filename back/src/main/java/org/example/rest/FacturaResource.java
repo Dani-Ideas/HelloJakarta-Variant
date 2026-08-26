@@ -10,13 +10,15 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
 import org.example.dto.FacturaDTO;
 import org.example.dto.FacturaPatchDTO;
 import org.example.lib.FacturaService;
 
-import java.util.List;
+import java.net.URI;
 
 // A proposito NO tiene @DELETE: borrar una factura ya emitida no tiene sentido de
 // negocio real (a diferencia de Producto, que si se puede dar de baja).
@@ -28,9 +30,12 @@ public class FacturaResource {
     @EJB
     private FacturaService facturaService;
 
+    @Context
+    private UriInfo uriInfo;
+
     @GET
-    public List<FacturaDTO> listar() {
-        return facturaService.listar();
+    public Response listar() {
+        return Response.ok(facturaService.listar()).build();
     }
 
     @GET
@@ -46,7 +51,8 @@ public class FacturaResource {
     @POST
     public Response crear(@Valid FacturaDTO dto) {
         FacturaDTO creada = facturaService.crear(dto);
-        return Response.status(Response.Status.CREATED).entity(creada).build();
+        URI location = uriInfo.getAbsolutePathBuilder().path(String.valueOf(creada.id())).build();
+        return Response.created(location).entity(creada).build();
     }
 
     @PUT

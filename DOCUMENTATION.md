@@ -144,14 +144,21 @@ no en la 7 (ver 1.1). GF7 se dejó intacto por si algún día hace falta compara
 | Puerto admin | 4848 | **4849** — hay que pasar `--port 4849` en cualquier comando remoto de `asadmin` |
 | Puerto Derby | 1527 | **1628** — hay que pasar `--dbport 1628` al hacer `start-database` |
 
+**Orden importa al arrancar de cero** — Derby primero, dominio después. Si el dominio
+arranca primero, intenta recargar solo las apps que ya tenía desplegadas ANTES de que
+Derby esté disponible, la carga falla (`Connection refused` en el log) y la app queda
+`enabled` en `list-applications` pero rota por dentro (404 en cualquier endpoint real). Si
+te pasa, el arreglo es simplemente volver a desplegar (`deploy --force=true`) una vez que
+confirmes que Derby ya responde — ver incidente #13 en `Documentation/bitacora-fixes.md`.
+
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 cd /home/robute/Documentos/codes/SanboxTEST/glassfish8/glassfish/bin
 
-./asadmin start-domain                              # arranca GF8 (usa el puerto 4849 solo)
-./asadmin start-database --dbport 1628              # Derby de GF8, puerto propio
-./asadmin --port 4849 deploy --force=true <ruta.war>
-./asadmin --port 4849 ping-connection-pool DerbyPool
+./asadmin start-database --dbport 1628              # PRIMERO: Derby de GF8, puerto propio
+./asadmin start-domain                              # DESPUES: arranca GF8 (puerto 4849)
+./asadmin --port 4849 ping-connection-pool DerbyPool   # confirma que Derby responde
+./asadmin --port 4849 deploy --force=true <ruta.war>   # solo si list-applications muestra la app rota
 ./asadmin stop-domain
 ```
 
