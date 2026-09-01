@@ -1,0 +1,20 @@
+services:
+  # Base de datos real de desarrollo para HelloJakarta-variante. Reemplaza a DerbyPool
+  # (la base embebida que trae GlassFish) para que puedas conectarte tú mismo con
+  # cualquier cliente (Azure Data Studio, DBeaver, sqlcmd, etc.) y ver/editar los datos
+  # directamente -- ver Documentation/sqlserver.md para la explicación completa.
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: hellojakarta-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "HelloJakarta_2026!"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    restart: unless-stopped
+
+volumes:
+  sqlserver-data:

@@ -388,6 +388,12 @@ trae (4.0.5) es anterior a la serie 5.0 que sí implementa Jakarta Data.
 - Comandos remotos de `asadmin` contra GF8 necesitan `--port 4849` explícito (si no, por
   default intenta `4848`, que es el puerto de GF7).
 
+  **Actualización (ver incidente #16):** este esquema de puertos corridos ya no está en
+  pie — en algún momento posterior el `domain1` de GF8 quedó con los puertos default de
+  nuevo (`8080`/`4848`/`1527`), y como en la práctica GF7 y GF8 nunca corren al mismo
+  tiempo, se decidió no volver a correr los puertos: más simple dejar que GF8 use los
+  default y mantener GF7 apagado. `DOCUMENTATION.md` sección 2 ya refleja esto.
+
 ### El proyecto ahora apunta a Jakarta EE 11 / GlassFish 8
 
 - `back/pom.xml`: `jakarta.jakartaee-api` de `10.0.0` → `11.0.0`, `maven.compiler.release`
@@ -628,3 +634,48 @@ volvían con `id: null`): `ProductoServiceImpl` y `FacturaServiceImpl` quedaron 
 `Repository` (Jakarta Data) y su `Mapper` (MapStruct), nada más. `DELETE` con conflicto de
 FK (`409`, vía `EJBExceptionMapper`), `DELETE` limpio (`204`), y `POST` de `Factura` con
 relación a `Producto` — todo verificado funcionando después del cambio.
+
+---
+
+## 16. Migración a SQL Server: el servidor que respondía en el 8080/4848 era GlassFish 7 (obsoleto), no GF8
+
+**Contexto:** al armar la base de datos real en SQL Server (ver `Documentation/sqlserver.md`),
+antes de tocar nada se verificó qué server estaba realmente sirviendo la app en ese momento
+— por costumbre, no porque se sospechara nada raro.
+
+**Síntoma/hallazgo:** `GET /api/productos` en `http://localhost:8080/...` respondía `200`
+con datos reales. Todo parecía normal. Pero el proceso Java escuchando en el puerto 4848
+(confirmado con `ss -ltnp`) resultó ser **GlassFish 7** (`java-17-openjdk`), no GlassFish 8
+— contradice directamente la sección 1.1 de `DOCUMENTATION.md` ("el proyecto corre sobre
+Jakarta EE 11 / GlassFish 8, no GlassFish 7"). Confirmado también inspeccionando el bytecode
+real de una clase ya desplegada (`ProductoServiceImpl.class`, primeros bytes
+`CA FE BA BE 00 00 00 3D` → `0x3D` = 61 = **class file version de Java 17**, no 65/Java 21).
+
+**Root cause:** el WAR que GF7 tenía desplegado (y seguía sirviendo sin quejarse, porque
+GlassFish recarga automáticamente lo que ya tenía desplegado al reiniciar el dominio) era
+de una build **anterior** a la migración a Jakarta Data/GlassFish 8 — probablemente GF7 se
+arrancó por costumbre en algún momento y nunca se volvió a apagar. Que respondiera bien con
+`CrudRepository` no era prueba de nada: esa build específica simplemente nunca se
+reconstruyó con el `pom.xml` actual (`maven.compiler.release=21`, que bajo JDK 17 ni
+siquiera debería poder compilar — otra señal de que era una build vieja).
+
+**Por qué esto SÍ importaba para la tarea de SQL Server:** de haber configurado el pool
+nuevo sobre ese GF7 sin darse cuenta, habría quedado funcionando "por ahora" contra una
+build obsoleta — y el día que alguien compilara el código actual (`mvn package` con JDK 21,
+que genera bytecode versión 65) e intentara desplegarlo ahí, GF7 (corriendo con JDK 17)
+habría fallado con `UnsupportedClassVersionError` al cargar las clases, un error confuso de
+rastrear si no se sabía que el server activo era el equivocado.
+
+**Fix:** `stop-domain` en GF7, `start-domain` en GF8 (`AS_JAVA=.../java-21-openjdk`),
+`mvn package` con `JAVA_HOME=.../java-21-openjdk` (regenera el WAR con bytecode Java 21 de
+verdad), y `deploy --force=true` de ese WAR nuevo sobre GF8. Confirmado con el mismo truco
+del class file (`0x41` = 65 = Java 21 en las clases ya desplegadas) y con `curl` contra los
+endpoints reales.
+
+**Nota aparte, resuelta después:** la sección 2 de `DOCUMENTATION.md` describía GF8
+corriendo en puertos corridos (`8081`/`4849`/`1628`) para convivir con GF7 en paralelo —
+pero el `domain.xml` real de GF8 siempre tuvo los puertos default (`8080`/`4848`), ese
+esquema nunca se llegó a configurar así de verdad. Como GF7 quedó apagado (nunca hace falta
+tenerlo corriendo a la vez), se corrigió la documentación para reflejar los puertos
+default, en vez de mover los puertos reales de GF8 para que coincidieran con lo que decía
+el documento — ver `DOCUMENTATION.md` sección 2 y `Documentation/sqlserver.md`.

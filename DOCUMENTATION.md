@@ -11,9 +11,12 @@ servidor de despliegue de este proyecto.
 - Java: **21** (antes 17 — lo exige GlassFish 8; hay que compilar con
   `JAVA_HOME=.../java-21-openjdk`)
 - Build tool: Maven
-- Servidor: **Eclipse GlassFish 8.0.4** (Jakarta EE 11, full profile) — puertos corridos
-  para poder tener GF7 y GF8 instalados a la vez, ver sección 2
-- Base de datos: Apache Derby embebida en GlassFish (`DerbyPool` / `jdbc/__default`)
+- Servidor: **Eclipse GlassFish 8.0.4** (Jakarta EE 11, full profile), puertos default
+  (8080/4848) — GF7 se dejó instalado pero apagado, nunca corre en paralelo, ver sección 2
+- Base de datos: **SQL Server real, en un contenedor Docker** (`SQLServerPool` /
+  `jdbc/__default`) — ver `Documentation/sqlserver.md`. Antes era Derby embebida en
+  GlassFish (`DerbyPool`, ver `Documentation/persistencia-derbypool.md`); el pool sigue ahí
+  sin usarse, por si hiciera falta volver.
 
 ---
 
@@ -21,16 +24,21 @@ servidor de despliegue de este proyecto.
 
 GlassFish **persiste en disco** qué apps tienes desplegadas (`domain1/applications/`), así
 que al volver a arrancar el dominio, `HelloJakarta` reaparece solo en `list-applications`
-**sin que hagas `deploy` de nuevo**. Lo único que sí hay que prender manualmente cada vez
-es la base de datos (Derby no queda persistido como "encendido"):
+**sin que hagas `deploy` de nuevo**. Lo único que sí hay que prender manualmente cada vez es
+la base de datos — ya no es la Derby embebida, es el contenedor de SQL Server (ver
+`Documentation/sqlserver.md`), que tampoco queda "encendido" solo entre reinicios de la PC:
 
 ```bash
-cd /home/robute/Documentos/codes/SanboxTEST/glassfish7/glassfish/bin
-./asadmin start-domain      # levanta el servidor + las apps ya desplegadas
-./asadmin start-database    # levanta Derby (aparte, siempre hace falta)
+cd /home/robute/IdeaProjects/HelloJakarta-variante
+docker compose up -d                                    # PRIMERO: SQL Server (contenedor)
+
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+cd /home/robute/Documentos/codes/SanboxTEST/glassfish8/glassfish/bin
+./asadmin start-domain      # DESPUES: levanta GF8 + las apps ya desplegadas
 ```
 
-Solo vuelves a correr `asadmin deploy --force=true ...` cuando cambies y recompiles código.
+Solo vuelves a correr `asadmin deploy --force=true ...` cuando cambies y recompiles código
+(recompila también con `JAVA_HOME` en JDK 21 — ver sección 1.1).
 
 **Nota de esta variante**: a diferencia del proyecto original (100% backend, sin pantalla
 propia), aquí el WAR también trae el frontend embebido — ver `Documentation/frontend.md`.
@@ -133,58 +141,60 @@ interfaces (`lib`), nunca implementaciones concretas (`ejb`).
 
 ## 2. Comandos de GlassFish (cheat sheet)
 
-Hay **dos instalaciones de GlassFish en paralelo** — este proyecto se despliega en la 8,
-no en la 7 (ver 1.1). GF7 se dejó intacto por si algún día hace falta comparar/volver.
+Hay **dos instalaciones de GlassFish**, pero ya **no corren en paralelo** — solo se usa la
+8 (ver 1.1). GF7 se dejó instalado en disco pero **apagado**, sin tocarse: durante un
+tiempo quedó corriendo por descuido con una build vieja (Java 17, previa a la migración a
+Jakarta Data) sirviendo en los puertos default sin que nadie se diera cuenta — ver
+incidente #16 de `Documentation/bitacora-fixes.md`. Como GF8 es ahora el único que corre,
+usa los puertos default de cualquier dominio nuevo — **no hay ningún puerto "corrido"**,
+a pesar de lo que llegó a sugerir una versión anterior de este documento:
 
-| | GlassFish 7 (ya no se usa para este proyecto) | **GlassFish 8 (el que se usa)** |
-|---|---|---|
-| Carpeta | `.../SanboxTEST/glassfish7/glassfish/bin` | `.../SanboxTEST/glassfish8/glassfish/bin` |
-| JDK | 17 (default de la máquina) | **21** — `export JAVA_HOME=.../java-21-openjdk` antes de cualquier `asadmin`/`mvn` |
-| Puerto HTTP | 8080 | **8081** |
-| Puerto admin | 4848 | **4849** — hay que pasar `--port 4849` en cualquier comando remoto de `asadmin` |
-| Puerto Derby | 1527 | **1628** — hay que pasar `--dbport 1628` al hacer `start-database` |
+| | **GlassFish 8 (el único que se usa)** |
+|---|---|
+| Carpeta | `.../SanboxTEST/glassfish8/glassfish/bin` |
+| JDK | **21** — `export JAVA_HOME=.../java-21-openjdk` antes de cualquier `asadmin`/`mvn` |
+| Puerto HTTP | 8080 (default) |
+| Puerto admin | 4848 (default) |
+| Base de datos | SQL Server real en Docker, puerto 1433 — ver `Documentation/sqlserver.md` (ya NO es la Derby embebida de GlassFish; `DerbyPool` sigue configurado pero sin usarse) |
 
-**Orden importa al arrancar de cero** — Derby primero, dominio después. Si el dominio
-arranca primero, intenta recargar solo las apps que ya tenía desplegadas ANTES de que
-Derby esté disponible, la carga falla (`Connection refused` en el log) y la app queda
-`enabled` en `list-applications` pero rota por dentro (404 en cualquier endpoint real). Si
-te pasa, el arreglo es simplemente volver a desplegar (`deploy --force=true`) una vez que
-confirmes que Derby ya responde — ver incidente #13 en `Documentation/bitacora-fixes.md`.
+GF7 vive en `.../SanboxTEST/glassfish7/glassfish/bin`, apagado. Si algún día hiciera falta
+levantarlo de nuevo (comparar algo puntual, por ejemplo), usaría esos mismos puertos
+default — por eso **nunca deben correr los dos dominios al mismo tiempo**, chocarían en
+8080/4848.
+
+**Orden importa al arrancar de cero** — el contenedor de SQL Server primero, dominio
+después. Si el dominio arranca primero, intenta recargar las apps que ya tenía desplegadas
+ANTES de que SQL Server esté disponible, la carga falla y la app queda `enabled` en
+`list-applications` pero rota por dentro (404 en cualquier endpoint real). Si te pasa, el
+arreglo es simplemente volver a desplegar (`deploy --force=true`) una vez que confirmes que
+el contenedor ya responde — mismo mecanismo que el incidente #13 de `bitacora-fixes.md`
+(ahí la causa era Derby; hoy es SQL Server, pero es exactamente el mismo problema de orden).
 
 ```bash
+cd /home/robute/IdeaProjects/HelloJakarta-variante
+docker compose up -d                                # PRIMERO: SQL Server (ver sqlserver.md)
+
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 cd /home/robute/Documentos/codes/SanboxTEST/glassfish8/glassfish/bin
 
-./asadmin start-database --dbport 1628              # PRIMERO: Derby de GF8, puerto propio
-./asadmin start-domain                              # DESPUES: arranca GF8 (puerto 4849)
-./asadmin --port 4849 ping-connection-pool DerbyPool   # confirma que Derby responde
-./asadmin --port 4849 deploy --force=true <ruta.war>   # solo si list-applications muestra la app rota
+./asadmin start-domain                              # DESPUES: arranca GF8
+./asadmin ping-connection-pool SQLServerPool        # confirma que SQL Server responde
+./asadmin deploy --force=true <ruta.war>            # solo si list-applications muestra la app rota
 ./asadmin stop-domain
-```
-
-**URLs de GF8**: app en `http://localhost:8081/HelloJakarta-variante/`, admin console en
-`http://localhost:4849`.
-
-Todos los comandos de GF7 de abajo siguen funcionando igual, corridos desde:
-
-```bash
-cd /home/robute/Documentos/codes/SanboxTEST/glassfish7/glassfish/bin
 ```
 
 | Comando | Qué hace |
 |---|---|
 | `./asadmin start-domain` | Arranca el servidor (dominio `domain1`) |
 | `./asadmin stop-domain` | Lo apaga |
-| `./asadmin restart-domain` | Reinicia |
-| `./asadmin start-database` | Arranca Derby en modo Network Server (puerto 1527) — **necesario aparte del dominio** |
-| `./asadmin stop-database` | Apaga Derby |
+| `./asadmin restart-domain` | Reinicia (hace falta después de agregar un `.jar` a `domain1/lib`, ver `sqlserver.md`) |
 | `./asadmin list-applications` | Qué WARs están desplegados |
 | `./asadmin deploy --force=true <ruta.war>` | Despliega (o redepliega) un WAR |
 | `./asadmin undeploy <nombre-app>` | Quita una app desplegada |
-| `./asadmin list-jdbc-connection-pools` | Pools de conexión configurados |
+| `./asadmin list-jdbc-connection-pools` | Pools de conexión configurados (`SQLServerPool`, `DerbyPool` sin usar, `__TimerPool`) |
 | `./asadmin list-jdbc-resources` | Recursos JNDI (`jdbc/...`) configurados |
-| `./asadmin ping-connection-pool DerbyPool` | Prueba que la conexión a la BD funciona |
-| `./asadmin get "resources.jdbc-connection-pool.DerbyPool.property.*"` | Ver host/puerto/usuario/BD real del pool |
+| `./asadmin ping-connection-pool SQLServerPool` | Prueba que la conexión a SQL Server funciona |
+| `./asadmin get "resources.jdbc-connection-pool.SQLServerPool.property.*"` | Ver host/puerto/usuario/BD real del pool |
 
 **URLs útiles:**
 - App (frontend + API): `http://localhost:8080/HelloJakarta-variante/`
@@ -652,7 +662,9 @@ Fase A — Panorama general (5-10 min, solo para ubicarte)
 
 Fase B — Dónde vive y respira el backend
 2. Documentation/glassfish.md — qué es GlassFish, cómo arranca, dónde vive la base de datos
-3. Documentation/persistencia-derbypool.md — cómo se conecta a Derby
+3. Documentation/persistencia-derbypool.md — cómo se conectaba a Derby (histórico; ya no es
+   la base activa, pero explica la cadena persistence.xml → JNDI → pool que sigue igual)
+3b. Documentation/sqlserver.md — la base activa hoy: SQL Server real en Docker
 
 Fase C — El corazón: cómo funciona un endpoint de principio a fin
 4. Documentation/como-funcionan-los-endpoints.md — el documento más importante de todos, tómate tu tiempo aquí, no lo leas de un tirón. Es el que amarra reflection + generics + inyección + JPA + JSON en una sola narrativa.
