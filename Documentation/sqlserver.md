@@ -110,6 +110,48 @@ docker exec hellojakarta-sqlserver /opt/mssql-tools18/bin/sqlcmd \
   -Q "SELECT * FROM PRODUCTO;"
 ```
 
+### 2.1 Agregarla como Data Source en IntelliJ (para verla desde el propio IDE)
+
+IntelliJ (Ultimate) trae su propio cliente de base de datos integrado (es DataGrip por
+dentro) — no hace falta instalar Azure Data Studio ni nada aparte si prefieres quedarte en
+el IDE. Pasos:
+
+1. Abre el panel **Database**: `View → Tool Windows → Database` (o la pestaña vertical
+   "Database" en el borde derecho de la ventana).
+2. Click en el **`+`** de la esquina superior → **Data Source → Microsoft SQL Server**.
+3. La primera vez que usas este driver, IntelliJ muestra un aviso tipo *"Driver files
+   missing"* con un link **Download** — click ahí (baja el driver una sola vez; es una copia
+   propia de IntelliJ, no tiene relación con el `.jar` que se copió a mano en
+   `domain1/lib` para GlassFish, sección 3).
+4. En la pestaña **General**, llena:
+
+   | Campo | Valor |
+   |---|---|
+   | Host | `localhost` |
+   | Port | `1433` |
+   | Authentication | `User & Password` |
+   | User | `sa` |
+   | Password | `HelloJakarta_2026!` (marca "Save password" para no escribirla cada vez) |
+   | Database | `HelloJakartaDB` |
+
+5. **Paso que sí o sí hay que hacer** (si no, la conexión falla): ve a la pestaña
+   **Advanced** y agrega la propiedad `trustServerCertificate` con valor `true` (busca el
+   nombre en el filtro de arriba de la tabla de propiedades). Es la misma razón que en la
+   sección 4 con el pool de GlassFish — el contenedor usa un certificado autofirmado, y sin
+   esto la conexión falla con algo como `PKIX path building failed` / *"driver could not
+   establish a secure connection"*.
+6. Botón **Test Connection** (abajo a la izquierda del diálogo) — debe decir "Successful".
+   Si te pide descargar drivers otra vez o falla, revisa el paso 3 y el 5 antes que nada.
+7. **Apply / OK**. En el árbol del panel Database aparece `HelloJakartaDB` — despliega
+   `HelloJakartaDB → dbo → Tables` para ver `PRODUCTO`, `FACTURA`, `FACTURA_DETALLE`,
+   `SESION_CAJA`, `USUARIO`. Doble-click en cualquiera abre una grilla editable, y arriba
+   tienes una consola SQL propia de esa conexión (`click derecho → New → Query Console`).
+
+**Nota**: por default IntelliJ también lista las bases de sistema (`master`, `tempdb`,
+`model`, `msdb`) en el árbol de esa misma conexión — si quieres que el árbol muestre
+*solo* `HelloJakartaDB`, edita la Data Source (doble-click sobre ella) → pestaña
+**Schemas** → desmarca las que no quieras ver.
+
 ---
 
 ## 3. El driver JDBC — por qué hubo que reiniciar GlassFish

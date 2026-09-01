@@ -668,6 +668,7 @@ Fase B — Dónde vive y respira el backend
 
 Fase C — El corazón: cómo funciona un endpoint de principio a fin
 4. Documentation/como-funcionan-los-endpoints.md — el documento más importante de todos, tómate tu tiempo aquí, no lo leas de un tirón. Es el que amarra reflection + generics + inyección + JPA + JSON en una sola narrativa.
+4b. Documentation/generador-de-capas.md — una vez que entiendas el patrón Repository/Mapper/Service/Resource del punto 4, este script lo automatiza para entidades nuevas (dado que las @Entity se generan solas desde IntelliJ, ver sqlserver.md sección 2.1)
 5. Vuelve a DOCUMENTATION.md, ahora las secciones "Sintaxis rápida" y "Patrón Repository" — como referencia rápida, no lectura corrida (úsalo mientras el 4 sigue abierto en otra pestaña)
 
 Fase D — Frontend: los fundamentos
