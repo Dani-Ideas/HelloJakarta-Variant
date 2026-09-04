@@ -917,3 +917,20 @@ campo) **no rompe la compilación de Java** — pero sí puede romper el fronten
 porque TypeScript solo valida tipos en tiempo de compilación, no contra el JSON real que
 llega en runtime. Cada vez que cambie la forma de un DTO, hay que revisar a mano si algún
 componente de React lo consume directo.
+
+---
+
+## 22. `Resource` → `Controller`, y `ApplicationConfig` → `ControllerRegistry`
+
+Renombrado de vocabulario, sin cambio de comportamiento — imitando la terminología del
+proyecto real:
+
+- `ProductoResource` → `ProductoController`, y lo mismo con `Factura`/`SesionCaja`/`Usuario`.
+- `ApplicationConfig` → `ControllerRegistry` — mismo archivo, mismo `@ApplicationPath("/api")`,
+  mismo `getClasses()` explícito del incidente #19, solo que ahora el nombre de la clase
+  refleja lo que hace: es el "controller de controllers", el único que conoce a todos los
+  `Controller` (la relación va en un solo sentido — ningún `Controller` conoce al registro).
+
+Cero cambios de lógica, solo nombres de clase/archivo + las referencias dentro del `Set` de
+`ControllerRegistry`. Verificado con `curl` que los 4 endpoints (`/productos`, `/facturas`,
+`/sesiones-caja`, `/usuarios`) siguen respondiendo `200` después del rename.

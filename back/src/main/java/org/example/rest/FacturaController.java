@@ -25,7 +25,7 @@ import java.net.URI;
 @Path("/facturas")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-public class FacturaResource {
+public class FacturaController {
 
     @EJB
     private FacturaService facturaService;

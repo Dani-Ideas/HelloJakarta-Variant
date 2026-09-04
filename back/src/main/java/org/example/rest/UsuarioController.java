@@ -5,7 +5,6 @@ import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
@@ -15,37 +14,31 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
-import org.example.dto.ProductoDto;
-import org.example.dto.ProductoPatchDto;
-import org.example.lib.ProductoService;
+import org.example.dto.UsuarioDto;
+import org.example.lib.UsuarioService;
 
 import java.net.URI;
 
-// El Resource SOLO traduce peticion HTTP -> llamada de metodo, y resultado de metodo ->
-// respuesta HTTP (codigo de estado, headers). No sabe nada de negocio, no sabe nada de
-// EJB/JPA -- el conflicto de FK al borrar se resuelve en el ExceptionMapper
-// (EJBExceptionMapper), no aqui.
-@Path("/productos")
+@Path("/usuarios")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-public class ProductoResource {
+public class UsuarioController {
 
     @EJB
-    private ProductoService productoService;
+    private UsuarioService usuarioService;
 
-    // Para construir la URI del recurso creado en el header Location del POST.
     @Context
     private UriInfo uriInfo;
 
     @GET
     public Response listar() {
-        return Response.ok(productoService.listar()).build();
+        return Response.ok(usuarioService.listar()).build();
     }
 
     @GET
     @Path("/{id}")
     public Response buscar(@PathParam("id") Long id) {
-        ProductoDto dto = productoService.buscarPorId(id);
+        UsuarioDto dto = usuarioService.buscarPorId(id);
         if (dto == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
@@ -53,26 +46,16 @@ public class ProductoResource {
     }
 
     @POST
-    public Response crear(@Valid ProductoDto dto) {
-        ProductoDto creado = productoService.crear(dto);
+    public Response crear(@Valid UsuarioDto dto) {
+        UsuarioDto creado = usuarioService.crear(dto);
         URI location = uriInfo.getAbsolutePathBuilder().path(String.valueOf(creado.id())).build();
         return Response.created(location).entity(creado).build();
     }
 
     @PUT
     @Path("/{id}")
-    public Response actualizar(@PathParam("id") Long id, @Valid ProductoDto dto) {
-        ProductoDto actualizado = productoService.actualizar(id, dto);
-        if (actualizado == null) {
-            return Response.status(Response.Status.NOT_FOUND).build();
-        }
-        return Response.ok(actualizado).build();
-    }
-
-    @PATCH
-    @Path("/{id}")
-    public Response patch(@PathParam("id") Long id, @Valid ProductoPatchDto cambios) {
-        ProductoDto actualizado = productoService.patch(id, cambios);
+    public Response actualizar(@PathParam("id") Long id, @Valid UsuarioDto dto) {
+        UsuarioDto actualizado = usuarioService.actualizar(id, dto);
         if (actualizado == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
@@ -82,7 +65,7 @@ public class ProductoResource {
     @DELETE
     @Path("/{id}")
     public Response eliminar(@PathParam("id") Long id) {
-        boolean eliminado = productoService.eliminar(id);
+        boolean eliminado = usuarioService.eliminar(id);
         if (!eliminado) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }

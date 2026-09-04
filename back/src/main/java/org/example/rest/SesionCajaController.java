@@ -18,7 +18,7 @@ import java.util.List;
 @Path("/sesiones-caja")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-public class SesionCajaResource {
+public class SesionCajaController {
 
     @EJB
     private SesionCajaService sesionCajaService;
