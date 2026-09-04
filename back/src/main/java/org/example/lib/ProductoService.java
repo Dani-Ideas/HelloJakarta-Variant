@@ -1,6 +1,7 @@
 package org.example.lib;
 
 import org.example.dto.ProductoDto;
+import org.example.dto.ProductoPatchDto;
 
 public interface ProductoService extends Service<ProductoDto, Long> {
 

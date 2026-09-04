@@ -10,6 +10,7 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.example.dto.SesionCajaDto;
 import org.example.lib.SesionCajaService;
 
 import java.util.List;
@@ -23,14 +24,14 @@ public class SesionCajaResource {
     private SesionCajaService sesionCajaService;
 
     @GET
-    public List<SesionCajaDTO> listar() {
+    public List<SesionCajaDto> listar() {
         return sesionCajaService.listar();
     }
 
     @GET
     @Path("/{id}")
     public Response buscar(@PathParam("id") Long id) {
-        SesionCajaDTO dto = sesionCajaService.buscarPorId(id);
+        SesionCajaDto dto = sesionCajaService.buscarPorId(id);
         if (dto == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
@@ -38,8 +39,8 @@ public class SesionCajaResource {
     }
 
     @POST
-    public Response crear(@Valid SesionCajaDTO dto) {
-        SesionCajaDTO creada = sesionCajaService.crear(dto);
+    public Response crear(@Valid SesionCajaDto dto) {
+        SesionCajaDto creada = sesionCajaService.crear(dto);
         return Response.status(Response.Status.CREATED).entity(creada).build();
     }
 }

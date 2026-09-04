@@ -15,6 +15,8 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
+import org.example.dto.ProductoDto;
+import org.example.dto.ProductoPatchDto;
 import org.example.lib.ProductoService;
 
 import java.net.URI;
@@ -22,8 +24,7 @@ import java.net.URI;
 // El Resource SOLO traduce peticion HTTP -> llamada de metodo, y resultado de metodo ->
 // respuesta HTTP (codigo de estado, headers). No sabe nada de negocio, no sabe nada de
 // EJB/JPA -- el conflicto de FK al borrar se resuelve en el ExceptionMapper
-// (RecursoEnUsoExceptionMapper), no aqui, exactamente igual que ValidationExceptionMapper
-// ya maneja los 400 de Bean Validation sin que ningun Resource tenga que saberlo.
+// (EJBExceptionMapper), no aqui.
 @Path("/productos")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -44,7 +45,7 @@ public class ProductoResource {
     @GET
     @Path("/{id}")
     public Response buscar(@PathParam("id") Long id) {
-        ProductoDTO dto = productoService.buscarPorId(id);
+        ProductoDto dto = productoService.buscarPorId(id);
         if (dto == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
@@ -52,19 +53,16 @@ public class ProductoResource {
     }
 
     @POST
-    public Response crear(@Valid ProductoDTO dto) {
-        ProductoDTO creado = productoService.crear(dto);
-        // Response.created(uri) pone el status 201 Y el header Location -- practica
-        // estandar de REST: el cliente sabe donde vive el recurso recien creado sin
-        // tener que adivinar la URL a partir del id que viene en el cuerpo.
+    public Response crear(@Valid ProductoDto dto) {
+        ProductoDto creado = productoService.crear(dto);
         URI location = uriInfo.getAbsolutePathBuilder().path(String.valueOf(creado.id())).build();
         return Response.created(location).entity(creado).build();
     }
 
     @PUT
     @Path("/{id}")
-    public Response actualizar(@PathParam("id") Long id, @Valid ProductoDTO dto) {
-        ProductoDTO actualizado = productoService.actualizar(id, dto);
+    public Response actualizar(@PathParam("id") Long id, @Valid ProductoDto dto) {
+        ProductoDto actualizado = productoService.actualizar(id, dto);
         if (actualizado == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
@@ -73,8 +71,8 @@ public class ProductoResource {
 
     @PATCH
     @Path("/{id}")
-    public Response patch(@PathParam("id") Long id, @Valid ProductoPatchDTO cambios) {
-        ProductoDTO actualizado = productoService.patch(id, cambios);
+    public Response patch(@PathParam("id") Long id, @Valid ProductoPatchDto cambios) {
+        ProductoDto actualizado = productoService.patch(id, cambios);
         if (actualizado == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }

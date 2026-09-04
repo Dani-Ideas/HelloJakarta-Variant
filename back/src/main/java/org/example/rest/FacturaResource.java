@@ -14,6 +14,8 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
+import org.example.dto.FacturaDto;
+import org.example.dto.FacturaPatchDto;
 import org.example.lib.FacturaService;
 
 import java.net.URI;
@@ -39,7 +41,7 @@ public class FacturaResource {
     @GET
     @Path("/{id}")
     public Response buscar(@PathParam("id") Long id) {
-        FacturaDTO dto = facturaService.buscarPorId(id);
+        FacturaDto dto = facturaService.buscarPorId(id);
         if (dto == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
@@ -47,16 +49,16 @@ public class FacturaResource {
     }
 
     @POST
-    public Response crear(@Valid FacturaDTO dto) {
-        FacturaDTO creada = facturaService.crear(dto);
+    public Response crear(@Valid FacturaDto dto) {
+        FacturaDto creada = facturaService.crear(dto);
         URI location = uriInfo.getAbsolutePathBuilder().path(String.valueOf(creada.id())).build();
         return Response.created(location).entity(creada).build();
     }
 
     @PUT
     @Path("/{id}")
-    public Response actualizar(@PathParam("id") Long id, @Valid FacturaDTO dto) {
-        FacturaDTO actualizada = facturaService.actualizar(id, dto);
+    public Response actualizar(@PathParam("id") Long id, @Valid FacturaDto dto) {
+        FacturaDto actualizada = facturaService.actualizar(id, dto);
         if (actualizada == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
@@ -65,8 +67,8 @@ public class FacturaResource {
 
     @PATCH
     @Path("/{id}")
-    public Response patch(@PathParam("id") Long id, FacturaPatchDTO cambios) {
-        FacturaDTO actualizada = facturaService.patch(id, cambios);
+    public Response patch(@PathParam("id") Long id, FacturaPatchDto cambios) {
+        FacturaDto actualizada = facturaService.patch(id, cambios);
         if (actualizada == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }

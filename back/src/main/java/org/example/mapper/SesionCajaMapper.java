@@ -2,14 +2,19 @@ package org.example.mapper;
 
 import org.example.dto.SesionCajaDto;
 import org.example.model.SesionCajaEty;
-import org.mapstruct.*;
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+import org.mapstruct.factory.Mappers;
 
-@Mapper(unmappedTargetPolicy = ReportingPolicy.IGNORE, componentModel = MappingConstants.ComponentModel.CDI)
+@Mapper
 public interface SesionCajaMapper {
-    SesionCajaEty toEntity(SesionCajaDto sesionCajaDto);
 
-    SesionCajaDto toDto(SesionCajaEty sesionCajaEty);
+    SesionCajaMapper INSTANCE = Mappers.getMapper(SesionCajaMapper.class);
 
-    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
-    SesionCajaEty partialUpdate(SesionCajaDto sesionCajaDto, @MappingTarget SesionCajaEty sesionCajaEty);
+    SesionCajaDto toDto(SesionCajaEty sesion);
+
+    // id, cerrada y fApertura se ignoran: los decide el servidor al crear (ver
+    // SesionCajaServiceImpl.crear()), no el cliente.
+    @Mapping(target = "id", ignore = true)
+    SesionCajaEty toEntity(SesionCajaDto dto);
 }

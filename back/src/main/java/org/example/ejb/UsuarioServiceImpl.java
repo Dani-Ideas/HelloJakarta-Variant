@@ -2,6 +2,8 @@ package org.example.ejb;
 
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.example.dto.UsuarioDto;
 import org.example.lib.UsuarioRepository;
 import org.example.lib.UsuarioService;
@@ -12,9 +14,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-// Generado por scripts/generar_capas.py siguiendo el mismo patron que ProductoServiceImpl
-// (Jakarta Data + MapStruct, sin EntityManager/flush() -- ver Documentation/bitacora-fixes.md
-// incidente #15 si Usuario.id usara GenerationType.IDENTITY en vez de SEQUENCE).
 @Stateless
 public class UsuarioServiceImpl implements UsuarioService {
 
@@ -23,22 +22,29 @@ public class UsuarioServiceImpl implements UsuarioService {
 
     private final UsuarioMapper usuarioMapper = UsuarioMapper.INSTANCE;
 
+    // Usuario.id usa GenerationType.IDENTITY -- UsuarioResource.crear() usa creado.id()
+    // para el header Location del POST, asi que si hace falta el flush() (mismo patron
+    // que SesionCajaServiceImpl -- ver Documentation/bitacora-fixes.md incidente #15).
+    @PersistenceContext(unitName = "HelloJakartaPU")
+    private EntityManager em;
+
     @Override
     public UsuarioDto crear(UsuarioDto dto) {
         UsuarioEty creado = usuarioRepository.insert(usuarioMapper.toEntity(dto));
-        return usuarioMapper.toDTO(creado);
+        em.flush();
+        return usuarioMapper.toDto(creado);
     }
 
     @Override
     public List<UsuarioDto> listar() {
         return usuarioRepository.findAll()
-                .map(usuarioMapper::toDTO)
+                .map(usuarioMapper::toDto)
                 .collect(Collectors.toList());
     }
 
     @Override
     public UsuarioDto buscarPorId(Long id) {
-        return usuarioMapper.toDTO(usuarioRepository.findById(id).orElse(null));
+        return usuarioMapper.toDto(usuarioRepository.findById(id).orElse(null));
     }
 
     @Override
@@ -51,7 +57,7 @@ public class UsuarioServiceImpl implements UsuarioService {
         entidad.setNombre(dto.nombre());
         entidad.setRol(dto.rol());
         UsuarioEty actualizado = usuarioRepository.update(entidad);
-        return usuarioMapper.toDTO(actualizado);
+        return usuarioMapper.toDto(actualizado);
     }
 
     @Override

@@ -2,7 +2,10 @@ package org.example.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -10,30 +13,38 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
-import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Getter
 @Setter
 @Entity
 @Table(name = "SESION_CAJA")
 public class SesionCajaEty {
+
+    // IDENTITY, no SEQUENCE: SesionCaja/Usuario se dejaron con la estrategia original a
+    // proposito, fuera del alcance de la migracion de Producto/Factura -- ver
+    // Documentation/bitacora-fixes.md incidente #15.
     @Id
-    @Column(name = "ID", nullable = false, precision = 19)
-    private BigDecimal id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Size(max = 255)
     @NotNull
     @Column(name = "CAJERO", nullable = false)
     private String cajero;
 
-    @Column(name = "CERRADA")
-    private Boolean cerrada;
+    private boolean cerrada;
 
+    // fApertura/fCierre, no fapertura/fcierre: camelCase, consistente con el resto del
+    // proyecto. LocalDateTime (fecha + hora), no LocalDate -- para poder calcular duracion
+    // real de la sesion.
     @Column(name = "FAPERTURA")
-    private Instant fapertura;
+    private LocalDateTime fApertura;
 
     @Column(name = "FCIERRE")
-    private Instant fcierre;
+    private LocalDateTime fCierre;
 
     @Size(max = 255)
     @NotNull
@@ -42,10 +53,15 @@ public class SesionCajaEty {
 
     @NotNull
     @Column(name = "MONTOAPERTURA", nullable = false, precision = 10, scale = 2)
-    private BigDecimal montoapertura;
+    private BigDecimal montoApertura;
 
     @Column(name = "MONTOCIERRE", precision = 10, scale = 2)
-    private BigDecimal montocierre;
+    private BigDecimal montoCierre;
 
+    // Lado inverso de la relacion con Factura -- se habia perdido en la regeneracion.
+    @OneToMany(mappedBy = "sesionCaja")
+    private List<FacturaEty> facturas = new ArrayList<>();
 
+    public SesionCajaEty() {
+    }
 }

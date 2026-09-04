@@ -3,6 +3,7 @@ package org.example.ejb;
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
 import org.example.dto.FacturaDto;
+import org.example.dto.FacturaPatchDto;
 import org.example.lib.FacturaRepository;
 import org.example.lib.FacturaService;
 import org.example.lib.ProductoRepository;
@@ -20,8 +21,8 @@ import java.util.stream.Collectors;
 @Stateless
 public class FacturaServiceImpl implements FacturaService {
 
-    // @Inject, no @EJB: FacturaRepository ahora es un repositorio Jakarta Data (bean CDI),
-    // generado por el proveedor -- ya no existe FacturaRepositoryImpl escrito a mano.
+    // @Inject, no @EJB: FacturaRepository es un repositorio Jakarta Data (bean CDI),
+    // generado por el proveedor -- no existe FacturaRepositoryImpl escrito a mano.
     @Inject
     private FacturaRepository facturaRepository;
 
@@ -31,8 +32,6 @@ public class FacturaServiceImpl implements FacturaService {
     @Inject
     private ProductoRepository productoRepository;
 
-    // FacturaMapper.INSTANCE, no @Inject: mismo motivo que ProductoServiceImpl -- MapStruct
-    // con componentModel por default genera una clase normal, no un bean CDI.
     private final FacturaMapper facturaMapper = FacturaMapper.INSTANCE;
 
     @Override
@@ -45,68 +44,66 @@ public class FacturaServiceImpl implements FacturaService {
 
         BigDecimal total = BigDecimal.ZERO;
         for (FacturaDetalleEty detalle : factura.getDetalles()) {
-            // El precio SIEMPRE se recalcula del lado del servidor, nunca se confia
-            // en el precio que mande el cliente en el JSON.
-            ProductoEty producto = productoRepository.findById(
-                    detalle.
-                    getProducto().
-                    getId()).
-                    orElse(null);
+            // El precio SIEMPRE se recalcula del lado del servidor, nunca se confia en el
+            // precio que mande el cliente en el JSON -- solo se usa el id del producto
+            // referenciado, el resto de "producto" que haya mandado el cliente se ignora.
+            ProductoEty producto = productoRepository.findById(detalle.getProducto().getId()).orElse(null);
             detalle.setProducto(producto);
             detalle.setPrecioUnitario(producto.getPrecio());
             detalle.setSubtotal(producto.getPrecio().multiply(BigDecimal.valueOf(detalle.getCantidad())));
+            // Lado dueno de la relacion: FacturaMapper.toEntity() (via FacturaDetalleMapper)
+            // ignora "factura" a proposito -- aqui es donde SI sabemos cual es la Factura
+            // padre, hay que asignarla a mano para que la cascada persista bien.
             detalle.setFactura(factura);
             total = total.add(detalle.getSubtotal());
         }
         factura.setTotal(total);
 
-        // Ya no hace falta EntityManager/flush() aqui: Factura.id ahora usa
-        // GenerationType.SEQUENCE, no IDENTITY -- ver ProductoServiceImpl.crear().
-        Factura creada = facturaRepository.insert(factura);
-        return facturaMapper.toDTO(creada);
+        // Sin EntityManager/flush() aqui: Factura.id usa GenerationType.SEQUENCE, no
+        // IDENTITY -- ver ProductoServiceImpl.crear().
+        FacturaEty creada = facturaRepository.insert(factura);
+        return facturaMapper.toDto(creada);
     }
 
     @Override
-    public List<FacturaDTO> listar() {
+    public List<FacturaDto> listar() {
         // findAll() de Jakarta Data devuelve Stream<T>, no List<T>.
         return facturaRepository.findAll()
-                .map(facturaMapper::toDTO)
+                .map(facturaMapper::toDto)
                 .collect(Collectors.toList());
     }
 
     @Override
-    public FacturaDTO buscarPorId(Long id) {
-        return facturaMapper.toDTO(facturaRepository.findById(id).orElse(null));
+    public FacturaDto buscarPorId(Long id) {
+        return facturaMapper.toDto(facturaRepository.findById(id).orElse(null));
     }
 
     @Override
-    public FacturaDTO actualizar(Long id, FacturaDTO dto) {
-        // El copiado de campos ya no vive en el Repository (Jakarta Data no permite
-        // metodos con cuerpo propio en la interfaz) -- es logica de negocio, vive aqui.
+    public FacturaDto actualizar(Long id, FacturaDto dto) {
+        // El copiado de campos vive aqui, no en el Repository -- es logica de negocio.
         // Solo se tocan numero/fecha/cliente: editar detalles/total de una factura ya
-        // emitida queda fuera del alcance de este PUT (ver FacturaRepository original).
-        Optional<Factura> existente = facturaRepository.findById(id);
+        // emitida queda fuera del alcance de este PUT.
+        Optional<FacturaEty> existente = facturaRepository.findById(id);
         if (existente.isEmpty()) {
             return null;
         }
-        Factura factura = existente.get();
+        FacturaEty factura = existente.get();
         factura.setNumero(dto.numero());
         factura.setFecha(dto.fecha());
         factura.setCliente(dto.cliente());
-        Factura actualizada = facturaRepository.update(factura);
-        return facturaMapper.toDTO(actualizada);
+        FacturaEty actualizada = facturaRepository.update(factura);
+        return facturaMapper.toDto(actualizada);
     }
 
     @Override
-    public FacturaDTO patch(Long id, FacturaPatchDTO cambios) {
+    public FacturaDto patch(Long id, FacturaPatchDto cambios) {
         // Diferencia con actualizar() (PUT): el cliente manda solo el campo que quiere
-        // corregir -- no hace falta reenviar numero/fecha/cliente completos, y no existe
-        // ni la opcion de mandar detalles (ver FacturaPatchDTO).
-        Optional<Factura> existente = facturaRepository.findById(id);
+        // corregir -- no hace falta reenviar numero/fecha/cliente/detalles completos.
+        Optional<FacturaEty> existente = facturaRepository.findById(id);
         if (existente.isEmpty()) {
             return null;
         }
-        Factura factura = existente.get();
+        FacturaEty factura = existente.get();
         if (cambios.numero() != null) {
             factura.setNumero(cambios.numero());
         }
@@ -116,7 +113,7 @@ public class FacturaServiceImpl implements FacturaService {
         if (cambios.cliente() != null) {
             factura.setCliente(cambios.cliente());
         }
-        Factura actualizada = facturaRepository.update(factura);
-        return facturaMapper.toDTO(actualizada);
+        FacturaEty actualizada = facturaRepository.update(factura);
+        return facturaMapper.toDto(actualizada);
     }
 }

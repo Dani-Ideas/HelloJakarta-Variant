@@ -14,13 +14,11 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
+import org.example.dto.UsuarioDto;
 import org.example.lib.UsuarioService;
 
 import java.net.URI;
 
-// Generado por scripts/generar_capas.py siguiendo el mismo patron que ProductoResource --
-// revisa el @Path (adivinanza simple, "usuarios") si el plural correcto es
-// irregular (ej. SesionCaja -> "sesiones-caja").
 @Path("/usuarios")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -40,7 +38,7 @@ public class UsuarioResource {
     @GET
     @Path("/{id}")
     public Response buscar(@PathParam("id") Long id) {
-        UsuarioDTO dto = usuarioService.buscarPorId(id);
+        UsuarioDto dto = usuarioService.buscarPorId(id);
         if (dto == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
@@ -48,16 +46,16 @@ public class UsuarioResource {
     }
 
     @POST
-    public Response crear(@Valid UsuarioDTO dto) {
-        UsuarioDTO creado = usuarioService.crear(dto);
+    public Response crear(@Valid UsuarioDto dto) {
+        UsuarioDto creado = usuarioService.crear(dto);
         URI location = uriInfo.getAbsolutePathBuilder().path(String.valueOf(creado.id())).build();
         return Response.created(location).entity(creado).build();
     }
 
     @PUT
     @Path("/{id}")
-    public Response actualizar(@PathParam("id") Long id, @Valid UsuarioDTO dto) {
-        UsuarioDTO actualizado = usuarioService.actualizar(id, dto);
+    public Response actualizar(@PathParam("id") Long id, @Valid UsuarioDto dto) {
+        UsuarioDto actualizado = usuarioService.actualizar(id, dto);
         if (actualizado == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }

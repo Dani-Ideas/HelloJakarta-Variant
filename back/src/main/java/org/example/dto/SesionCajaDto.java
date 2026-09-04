@@ -5,12 +5,19 @@ import jakarta.validation.constraints.Size;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
-import java.time.Instant;
+import java.time.LocalDateTime;
 
 /**
  * DTO for {@link org.example.model.SesionCajaEty}
  */
-public record SesionCajaDto(BigDecimal id, @NotNull @Size(max = 255) String cajero, Boolean cerrada, Instant fapertura,
-                            Instant fcierre, @NotNull @Size(max = 255) String locacion,
-                            @NotNull BigDecimal montoapertura, BigDecimal montocierre) implements Serializable {
+public record SesionCajaDto(
+        Long id,
+        @NotNull @Size(max = 255) String cajero,
+        Boolean cerrada,
+        LocalDateTime fApertura,
+        LocalDateTime fCierre,
+        @NotNull @Size(max = 255) String locacion,
+        @NotNull BigDecimal montoApertura,
+        BigDecimal montoCierre
+) implements Serializable {
 }
