@@ -873,3 +873,47 @@ necesita correr una sola vez al arrancar.
 **Verificado con `curl`** contra las 4 entidades: `GET`/`POST`/`PATCH` de `Producto`,
 `GET`/`POST` de `Factura` (con `detalles` anidados), `POST` de `SesionCaja` y `Usuario`
 (ambos `IDENTITY` + `flush()`, funcionando desde el `WriteServiceImpl` correspondiente).
+
+---
+
+## 21. El cambio de forma de `FacturaDetalleDto` (incidente #18) rompió el frontend
+
+**Síntoma:** la reconstrucción del incidente #18 cambió `FacturaDetalleDto` de campos
+sueltos (`productoId: Long, nombreProducto: String`) a un objeto anidado
+(`producto: ProductoDto`) — cambio de diseño real, no un error, pero el frontend nunca se
+actualizó para reflejarlo.
+
+**Dónde se rompía:** `frontend/src/components/FacturasTable.tsx` (línea 110) leía
+`detalle.nombreProducto` — un campo que ya no existe en el JSON real. No tronaba (TypeScript
+no valida nada en runtime, el `interface` de `types.ts` solo es una anotación de
+compilación) — la columna "Producto" de la tabla expandida simplemente se veía **vacía**,
+sin ningún error visible en consola.
+
+**Fix**, 2 archivos:
+
+```ts
+// api/types.ts
+export interface FacturaDetalleDTO {
+  id: number;
+  cantidad: number;
+  precioUnitario: number;
+  subtotal: number;
+  producto: ProductoDTO;   // objeto anidado, ya no productoId/nombreProducto sueltos
+}
+```
+```tsx
+// components/FacturasTable.tsx
+<td>{detalle.producto.nombre}</td>   {/* antes: detalle.nombreProducto */}
+```
+
+**Verificado** con `curl` a `/api/facturas/1` que el JSON real (`detalles[0].producto.nombre`)
+coincide exactamente con lo que el componente ahora lee, y con `npx tsc --noEmit` que el
+frontend compila sin errores de tipo. No se pudo confirmar visualmente en navegador en esta
+sesión (sin herramienta de browser disponible) — pendiente que el usuario lo confirme
+abriendo la app y expandiendo una fila de la tabla de Facturas.
+
+**Lección general**: un cambio en la forma de un DTO del backend (agregar/quitar/anidar un
+campo) **no rompe la compilación de Java** — pero sí puede romper el frontend en silencio,
+porque TypeScript solo valida tipos en tiempo de compilación, no contra el JSON real que
+llega en runtime. Cada vez que cambie la forma de un DTO, hay que revisar a mano si algún
+componente de React lo consume directo.

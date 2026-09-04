@@ -107,7 +107,7 @@ export function FacturasTable() {
                     <tbody>
                       {row.original.detalles.map((detalle) => (
                         <tr key={detalle.id}>
-                          <td>{detalle.nombreProducto}</td>
+                          <td>{detalle.producto.nombre}</td>
                           <td className="num">{detalle.cantidad}</td>
                           <td className="num">{formatoMoneda.format(detalle.precioUnitario)}</td>
                           <td className="num">{formatoMoneda.format(detalle.subtotal)}</td>

@@ -8,11 +8,12 @@ export interface ProductoDTO {
 
 export interface FacturaDetalleDTO {
   id: number;
-  productoId: number;
-  nombreProducto: string;
   cantidad: number;
   precioUnitario: number;
   subtotal: number;
+  // Objeto anidado, no productoId/nombreProducto sueltos -- FacturaDetalleDto (backend)
+  // cambio de forma en Documentation/bitacora-fixes.md incidente #18.
+  producto: ProductoDTO;
 }
 
 export interface FacturaDTO {
