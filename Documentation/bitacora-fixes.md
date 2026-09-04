@@ -721,3 +721,155 @@ configurados en GlassFish sin borrar, mismo criterio que ya se venía siguiendo 
 cualquiera de los dos motores anteriores es un solo comando `asadmin set
 resources.jdbc-resource.jdbc/__default.pool-name=...` + la línea correspondiente en
 `persistence.xml` + redeploy).
+
+---
+
+## 18. Regeneración con JPA Buddy rompió `model`/`dto`/`mapper`/`ejb`/`rest` — reconstrucción completa
+
+**Contexto:** se usó JPA Buddy (plugin de IntelliJ) para regenerar `model`, `dto` y
+`mapper` de las 5 entidades desde cero, con nombres nuevos (`*Ety`, `*Dto`). El resto de
+las capas (`lib`, `ejb`, `rest`) no se actualizó a la par, y la propia regeneración
+introdujo varios bugs reales, no solo de nombres.
+
+**Bloqueantes de compilación** (síntoma: ~80 errores `cannot find symbol`):
+- `ejb/*ServiceImpl.java` y `rest/*Resource.java` seguían usando los nombres viejos
+  (`Producto`, `ProductoDTO`, etc.) que ya no existían.
+- `FacturaService.java` (interfaz) usaba `ProductoDto` en vez de `FacturaDto` en las 3
+  firmas — copy/paste de `ProductoService.java` sin terminar de adaptar.
+- `ProductoMapper`/`UsuarioMapper` tenían el método `toEntity(...)` declarado dos veces
+  en el mismo archivo.
+- Faltaban `ProductoPatchDto`/`FacturaPatchDto` — se perdieron en la regeneración.
+
+**Bugs reales que NO tronaban al compilar** (más peligrosos — silenciosos):
+- **Los 5 `@Id` quedaron como `BigDecimal`** (JPA Buddy los leyó así al hacer ingeniería
+  inversa de la base), pero los 5 `Repository` seguían diciendo `CrudRepository<X, Long>`
+  — Java no valida eso en compilación. Se corrigió devolviendo `Long` a las 5 entidades
+  (es lo que el resto del proyecto ya esperaba).
+- **`UsuarioEty` quedó con campos prefijados** (`idUsuario`, `nombreUsuario`,
+  `rolUsuario`) que no coincidían con `UsuarioDto` (`id`, `nombre`, `rol`) — y como el
+  `@Mapper` tenía `unmappedTargetPolicy = ReportingPolicy.IGNORE`, MapStruct no avisaba:
+  generaba un mapper que compilaba perfecto y no copiaba ningún campo. Se corrigieron los
+  nombres de campo de `UsuarioEty` (consistente con las otras 4 entidades) y se quitó
+  `IGNORE` de los 5 mappers — mejor que un mapeo roto falle en compilación a que falle en
+  silencio.
+- **`Usuario.rol` dejó de ser el `enum Rol`** (se había armado a propósito para no poder
+  guardar texto suelto), quedó como `String` plano. Se recreó `model/Rol.java` (se había
+  borrado) y se regresó el `@Enumerated(EnumType.STRING)`.
+- **`FacturaEty` perdió el lado inverso de la relación con `FacturaDetalleEty`** (el
+  `@OneToMany(mappedBy = "factura")`) y `FacturaDto` no tenía ningún campo `detalles` — una
+  Factura ya no podía exponer sus líneas. Se recuperó la relación en la entidad y el campo
+  en el DTO (mismo arreglo en `SesionCajaEty.facturas`, que también se había perdido).
+- **Bug nuevo, encontrado ya con todo compilando, solo al probar con `curl`**:
+  `FacturaDetalleMapper` reusaba `ProductoMapper.toEntity()` (que ignora el `id` a
+  propósito, es para crear un Producto nuevo) también para el caso de **referenciar** un
+  Producto que ya existe por su id (`{"producto": {"id": 1}, "cantidad": 2}` al crear una
+  Factura) — el id se perdía en el mapeo, y `FacturaServiceImpl.crear()` tronaba con
+  `NullPointerException: id is required` al buscar el producto. Fix: método `default`
+  aparte en `FacturaDetalleMapper` (`referenciaProducto`, con `@Named` +
+  `qualifiedByName`) que solo copia el id, sin pasar por el mapeo de "creación".
+
+**Limpieza adicional** (no rompía nada, pero se aprovechó para dejarlo consistente):
+- Los 5 `Mapper` quedaron todos con el mismo patrón (`@Mapper` simple + `INSTANCE`, sin
+  CDI, sin `IGNORE`) — antes 2 usaban un patrón y 3 usaban otro.
+- Nombres de campo sin camelCase (`montoapertura`, `preciounitario`) corregidos a
+  `montoApertura`/`precioUnitario` en `SesionCajaEty`/`FacturaDetalleEty` y sus DTOs.
+
+**Verificado con `curl` real contra las 4 entidades, de punta a punta**: `POST`/`PATCH` de
+`Producto` y `Factura` (con `detalles` anidados y referencia a `Producto` existente),
+`DELETE` con conflicto de FK (`409`), `POST` de `Usuario` (con `Rol` enum) y `SesionCaja`
+(ambas con `IDENTITY` + `flush()`, incidente #15).
+
+---
+
+## 19. `Service` dividido en `ReadService`/`WriteService`, y registro explícito de JAX-RS
+
+Dos cambios de arquitectura, imitando el proyecto real del trabajo:
+
+**1. `lib/Service.java` pasó a ser un marcador vacío.** Antes traía `crear`/`listar`/
+`buscarPorId` directo. Ahora esos 3 se repartieron en dos interfaces nuevas:
+
+```java
+public interface ReadService<D, ID> extends Service<D, ID> {
+    List<D> listar();
+    D buscarPorId(ID id);
+}
+
+public interface WriteService<D, ID> extends Service<D, ID> {
+    D crear(D dto);
+}
+```
+
+Cada `XService` de entidad ahora extiende `ReadService<Dto, Long>, WriteService<Dto, Long>`
+en vez de solo `Service<Dto, Long>`. `actualizar`/`patch`/`eliminar` siguen sin estar en
+`WriteService` a propósito — no todas las entidades los necesitan (`SesionCaja` no expone
+ninguno de los tres, `Factura` no expone `eliminar`) — cada `XService` los agrega directo
+si le hacen falta, exactamente igual que ya se hacía antes del split. Cero cambios en
+ningún `*ServiceImpl.java` — el split es puramente de interfaces, las implementaciones ya
+cumplían ambos contratos de todas formas.
+
+**2. `ApplicationConfig.java` pasó de registro implícito a explícito.** Antes:
+`extends Application` sin overridear nada — Jersey registraba cualquier `@Path`/`@Provider`
+que encontrara por classpath scanning. Ahora:
+
+```java
+@Override
+public Set<Class<?>> getClasses() {
+    return Set.of(
+            ProductoResource.class, FacturaResource.class,
+            SesionCajaResource.class, UsuarioResource.class,
+            CorsFilter.class, ValidationExceptionMapper.class, EJBExceptionMapper.class
+    );
+}
+```
+
+Si una clase con `@Path`/`@Provider` no está en este `Set`, ya no se expone — aunque el
+código compile perfecto. `SpaFallbackFilter` NO va en esta lista: es un `@WebFilter` de
+Servlet, no un `@Provider` de JAX-RS, lo registra el contenedor de Servlet por su cuenta,
+no `Application`.
+
+**Verificado con `curl`** que los 3 `@Provider` (que antes se registraban solos) siguen
+activos con el registro explícito: `CorsFilter` (header `Access-Control-Allow-Origin`
+presente), `ValidationExceptionMapper` (`400` con errores de campo en un `POST` inválido),
+`EJBExceptionMapper` (`409` en conflicto de FK) — y los 4 `Resource` responden normal.
+
+---
+
+## 20. Service dividido en 3 implementaciones reales por entidad (Read/Write/General), no solo interfaces
+
+Ajuste sobre el incidente #19: ahí solo se dividieron las **interfaces**
+(`ReadService`/`WriteService`), pero seguía habiendo **una sola implementación** por
+entidad (`ProductoServiceImpl` hacía todo el trabajo directo). El patrón real que se quería
+imitar tiene **3 clases `@Stateless` por entidad**:
+
+```
+ProductoReadServiceImpl   implements ProductoReadService   -- solo listar/buscarPorId
+ProductoWriteServiceImpl  implements ProductoWriteService  -- solo crear/actualizar/patch/eliminar
+ProductoServiceImpl       implements ProductoService       -- FACHADA: @EJB a los dos de
+                                                                arriba, cada metodo solo delega
+```
+
+El `Resource` sigue inyectando un solo `@EJB ProductoService` (cero cambios en `rest/`) —
+la fachada es la que decide, método por método, si le toca al `Read` o al `Write`, e
+internamente inyecta ambos. Los dos (`Read` y `Write`) usan el **mismo** `XMapper.INSTANCE`
+— los mappers no se dividen por lectura/escritura, solo los `Service`.
+
+Se replicó para las 4 entidades: 8 interfaces nuevas (`XReadService`/`XWriteService` en
+`lib/`), 8 implementaciones nuevas (`XReadServiceImpl`/`XWriteServiceImpl` en `ejb/`), y
+los 4 `XServiceImpl.java` existentes se reescribieron como fachadas puras (sin lógica
+propia, solo `@EJB` + delegar). La lógica real (cálculo de precios en `Factura`,
+`em.flush()` en `SesionCaja`/`Usuario` por `IDENTITY`) se movió tal cual a cada
+`XWriteServiceImpl`, sin cambios de comportamiento.
+
+**Nota sobre `@Stateless` vs `@Singleton`**: se consideró `@Singleton` para estas 12
+implementaciones nuevas, pensando que evitaría "caos" con peticiones concurrentes — es al
+revés. `@Stateless` usa un *pool* de instancias intercambiables (el mecanismo real que evita
+colisiones entre peticiones paralelas). `@Singleton` es una sola instancia compartida por
+toda la app, y sus métodos son de bloqueo de escritura exclusivo por default
+(`@Lock(WRITE)` implícito) — hubiera serializado *todas* las peticiones concurrentes a un
+mismo Service, incluidos los `GET` de puro lectura. Se quedó `@Stateless` en las 12 clases
+nuevas. La única `@Singleton` real del proyecto sigue siendo `DatosIniciales`, que sí
+necesita correr una sola vez al arrancar.
+
+**Verificado con `curl`** contra las 4 entidades: `GET`/`POST`/`PATCH` de `Producto`,
+`GET`/`POST` de `Factura` (con `detalles` anidados), `POST` de `SesionCaja` y `Usuario`
+(ambos `IDENTITY` + `flush()`, funcionando desde el `WriteServiceImpl` correspondiente).
