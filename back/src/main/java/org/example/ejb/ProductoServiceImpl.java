@@ -2,12 +2,11 @@ package org.example.ejb;
 
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
-import org.example.dto.ProductoDTO;
-import org.example.dto.ProductoPatchDTO;
+import org.example.dto.ProductoDto;
 import org.example.lib.ProductoRepository;
 import org.example.lib.ProductoService;
 import org.example.mapper.ProductoMapper;
-import org.example.model.Producto;
+import org.example.model.ProductoEty;
 
 import java.util.List;
 import java.util.Optional;
@@ -28,56 +27,56 @@ public class ProductoServiceImpl implements ProductoService {
     private final ProductoMapper productoMapper = ProductoMapper.INSTANCE;
 
     @Override
-    public ProductoDTO crear(ProductoDTO dto) {
+    public ProductoDto crear(ProductoDto dto) {
         // Ya no hace falta EntityManager/flush() aqui: Producto.id ahora usa
         // GenerationType.SEQUENCE, no IDENTITY -- el id se reserva ANTES del INSERT, asi
         // que insert() ya lo devuelve poblado sin forzar nada (ver Producto.java y
         // Documentation/bitacora-fixes.md incidente #15).
-        Producto creado = productoRepository.insert(productoMapper.toEntity(dto));
-        return productoMapper.toDTO(creado);
+        ProductoEty creado = productoRepository.insert(productoMapper.toEntity(dto));
+        return productoMapper.toDto(creado);
     }
 
     @Override
-    public List<ProductoDTO> listar() {
+    public List<ProductoDto> listar() {
         // findAll() de Jakarta Data devuelve Stream<T>, no List<T> como el findAll()
         // "casero" que teniamos antes -- por eso aqui ya no hace falta .stream().
         return productoRepository.findAll()
-                .map(productoMapper::toDTO)
+                .map(productoMapper::toDto)
                 .collect(Collectors.toList());
     }
 
     @Override
-    public ProductoDTO buscarPorId(Long id) {
-        return productoMapper.toDTO(productoRepository.findById(id).orElse(null));
+    public ProductoDto buscarPorId(Long id) {
+        return productoMapper.toDto(productoRepository.findById(id).orElse(null));
     }
 
     @Override
-    public ProductoDTO actualizar(Long id, ProductoDTO dto) {
+    public ProductoDto actualizar(Long id, ProductoDto dto) {
         // El copiado de campos ya no vive en el Repository (Jakarta Data no te deja
         // escribir metodos con cuerpo propio en la interfaz de repositorio) -- es logica
         // de negocio ("que significa actualizar un Producto"), asi que vive aqui.
-        Optional<Producto> existente = productoRepository.findById(id);
+        Optional<ProductoEty> existente = productoRepository.findById(id);
         if (existente.isEmpty()) {
             return null;
         }
-        Producto entidad = existente.get();
+        ProductoEty entidad = existente.get();
         entidad.setNombre(dto.nombre());
         entidad.setSku(dto.sku());
         entidad.setPrecio(dto.precio());
         entidad.setStock(dto.stock());
-        Producto actualizado = productoRepository.update(entidad);
-        return productoMapper.toDTO(actualizado);
+        ProductoEty actualizado = productoRepository.update(entidad);
+        return productoMapper.toDto(actualizado);
     }
 
     @Override
-    public ProductoDTO patch(Long id, ProductoPatchDTO cambios) {
+    public ProductoDto patch(Long id, ProductoPatchDto cambios) {
         // Diferencia con actualizar() (PUT): aqui solo se copia un campo si vino no-null
         // en el DTO. Todo lo que el cliente no haya mandado se queda como estaba.
-        Optional<Producto> existente = productoRepository.findById(id);
+        Optional<ProductoDto> existente = productoRepository.findById(id);
         if (existente.isEmpty()) {
             return null;
         }
-        Producto entidad = existente.get();
+        ProductoEty entidad = existente.get();
         if (cambios.nombre() != null) {
             entidad.setNombre(cambios.nombre());
         }
@@ -90,8 +89,8 @@ public class ProductoServiceImpl implements ProductoService {
         if (cambios.stock() != null) {
             entidad.setStock(cambios.stock());
         }
-        Producto actualizado = productoRepository.update(entidad);
-        return productoMapper.toDTO(actualizado);
+        ProductoEty actualizado = productoRepository.update(entidad);
+        return productoMapper.toDto(actualizado);
     }
 
     @Override

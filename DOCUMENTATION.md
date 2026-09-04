@@ -4,19 +4,20 @@ Proyecto de práctica para familiarizarse con Jakarta EE sobre GlassFish, antes 
 proyecto real del trabajo. Nada de esto es producción.
 
 **Desde que se agregó Jakarta Data (`CrudRepository`), el proyecto corre sobre Jakarta
-EE 11 / GlassFish 8**, no GlassFish 7 (ver sección 1.1 y `Documentation/bitacora-fixes.md`
-incidente #11 para el porqué). GlassFish 7 se dejó instalado y sin tocar, solo ya no es el
-servidor de despliegue de este proyecto.
+EE 11 / GlassFish 8** (ver sección 1.1 y `Documentation/bitacora-fixes.md` incidente #11
+para el porqué). **GlassFish 7 ya no existe en esta máquina** — se desinstaló, no hay que
+preocuparse de que compita con GF8 en ningún puerto.
 
-- Java: **21** (antes 17 — lo exige GlassFish 8; hay que compilar con
+- Java: **21** (lo exige GlassFish 8; hay que compilar con
   `JAVA_HOME=.../java-21-openjdk`)
 - Build tool: Maven
 - Servidor: **Eclipse GlassFish 8.0.4** (Jakarta EE 11, full profile), puertos default
-  (8080/4848) — GF7 se dejó instalado pero apagado, nunca corre en paralelo, ver sección 2
-- Base de datos: **SQL Server real, en un contenedor Docker** (`SQLServerPool` /
-  `jdbc/__default`) — ver `Documentation/sqlserver.md`. Antes era Derby embebida en
-  GlassFish (`DerbyPool`, ver `Documentation/persistencia-derbypool.md`); el pool sigue ahí
-  sin usarse, por si hiciera falta volver.
+  (8080/4848)
+- Base de datos: **H2 embebida en modo `AUTO_SERVER`** (`H2Pool` / `jdbc/__default`) — ver
+  `Documentation/h2.md`. Antes fue SQL Server en Docker (`Documentation/sqlserver.md`,
+  ahora histórico) y, antes de eso, Derby embebida en GlassFish
+  (`Documentation/persistencia-derbypool.md`, también histórico); ambos pools siguen
+  configurados en GlassFish sin usarse, por si hiciera falta volver.
 
 ---
 
@@ -24,17 +25,14 @@ servidor de despliegue de este proyecto.
 
 GlassFish **persiste en disco** qué apps tienes desplegadas (`domain1/applications/`), así
 que al volver a arrancar el dominio, `HelloJakarta` reaparece solo en `list-applications`
-**sin que hagas `deploy` de nuevo**. Lo único que sí hay que prender manualmente cada vez es
-la base de datos — ya no es la Derby embebida, es el contenedor de SQL Server (ver
-`Documentation/sqlserver.md`), que tampoco queda "encendido" solo entre reinicios de la PC:
+**sin que hagas `deploy` de nuevo**. La base de datos (H2) es un archivo local en
+`AUTO_SERVER` — no hay que levantar ningún contenedor ni proceso aparte, arranca ella sola
+en cuanto GlassFish abre la primera conexión:
 
 ```bash
-cd /home/robute/IdeaProjects/HelloJakarta-variante
-docker compose up -d                                    # PRIMERO: SQL Server (contenedor)
-
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 cd /home/robute/Documentos/codes/SanboxTEST/glassfish8/glassfish/bin
-./asadmin start-domain      # DESPUES: levanta GF8 + las apps ya desplegadas
+./asadmin start-domain      # levanta GF8 + las apps ya desplegadas + la base H2 sola
 ```
 
 Solo vuelves a correr `asadmin deploy --force=true ...` cuando cambies y recompiles código
@@ -100,11 +98,13 @@ incidente #11.
 
 **Por qué interfaz + implementación separadas** (patrón Repository, con inyección
 polimórfica): cualquier bean que necesite un repositorio o servicio inyecta la **interfaz**
-(`@EJB private ProductoRepository productoRepository;`, tipo de `lib`) — nunca conoce
-`ProductoRepositoryImpl` (la clase real, en `ejb`). GlassFish resuelve solo cuál
-implementación concreta usar. Esto es lo mismo que ya viste con `CrudService`
-(evitar repetir código entre entidades), pero ahora armado con interfaz + implementación
-en vez de solo herencia — así es como lo hacen en proyectos reales de Jakarta EE.
+— `@Inject private ProductoRepository productoRepository;` (CDI, porque es Jakarta Data)
+para el Repository, `@EJB private ProductoService productoService;` para el Service (sigue
+siendo un `@Stateless` escrito a mano) — nunca conoce la clase concreta que lo implementa.
+GlassFish/el proveedor resuelve solo cuál usar. Esto es lo mismo que ya viste con
+`CrudService` (evitar repetir código entre entidades), pero ahora armado con interfaz +
+implementación en vez de solo herencia — así es como lo hacen en proyectos reales de
+Jakarta EE.
 
 Flujo de una petición (`POST /api/facturas`):
 
@@ -123,10 +123,10 @@ FacturaServiceImpl.crear(dto)           [ejb, @Stateless — logica de negocio]
    │  productoRepository.buscarPorId(id) → precio REAL, recalculado en servidor
    │  el contenedor abre la transaccion JTA automaticamente
    ▼
-facturaRepository.crear(factura)        [ejb, @Stateless — solo datos]
-   │  em.persist(factura) → INSERT en commit (cascada a FacturaDetalle)
+facturaRepository.insert(factura)       [Jakarta Data, CrudRepository generado]
+   │  persist real → INSERT (cascada a FacturaDetalle)
    ▼
-Derby (jdbc/__default → DerbyPool)
+H2 (jdbc/__default → H2Pool, ver Documentation/h2.md)
    │
    ▼
 FacturaMapper.toDTO(creada) → JSON de respuesta (201 Created)
@@ -141,45 +141,29 @@ interfaces (`lib`), nunca implementaciones concretas (`ejb`).
 
 ## 2. Comandos de GlassFish (cheat sheet)
 
-Hay **dos instalaciones de GlassFish**, pero ya **no corren en paralelo** — solo se usa la
-8 (ver 1.1). GF7 se dejó instalado en disco pero **apagado**, sin tocarse: durante un
-tiempo quedó corriendo por descuido con una build vieja (Java 17, previa a la migración a
-Jakarta Data) sirviendo en los puertos default sin que nadie se diera cuenta — ver
-incidente #16 de `Documentation/bitacora-fixes.md`. Como GF8 es ahora el único que corre,
-usa los puertos default de cualquier dominio nuevo — **no hay ningún puerto "corrido"**,
-a pesar de lo que llegó a sugerir una versión anterior de este documento:
+Una sola instalación de GlassFish — **GF7 ya no existe en esta máquina** (se desinstaló).
+GF8 usa los puertos default de cualquier dominio nuevo, sin ningún ajuste:
 
-| | **GlassFish 8 (el único que se usa)** |
+| | **GlassFish 8** |
 |---|---|
 | Carpeta | `.../SanboxTEST/glassfish8/glassfish/bin` |
 | JDK | **21** — `export JAVA_HOME=.../java-21-openjdk` antes de cualquier `asadmin`/`mvn` |
 | Puerto HTTP | 8080 (default) |
 | Puerto admin | 4848 (default) |
-| Base de datos | SQL Server real en Docker, puerto 1433 — ver `Documentation/sqlserver.md` (ya NO es la Derby embebida de GlassFish; `DerbyPool` sigue configurado pero sin usarse) |
+| Base de datos | H2 embebida, modo `AUTO_SERVER` (archivo local, sin contenedor ni proceso aparte) — ver `Documentation/h2.md` |
 
-GF7 vive en `.../SanboxTEST/glassfish7/glassfish/bin`, apagado. Si algún día hiciera falta
-levantarlo de nuevo (comparar algo puntual, por ejemplo), usaría esos mismos puertos
-default — por eso **nunca deben correr los dos dominios al mismo tiempo**, chocarían en
-8080/4848.
-
-**Orden importa al arrancar de cero** — el contenedor de SQL Server primero, dominio
-después. Si el dominio arranca primero, intenta recargar las apps que ya tenía desplegadas
-ANTES de que SQL Server esté disponible, la carga falla y la app queda `enabled` en
-`list-applications` pero rota por dentro (404 en cualquier endpoint real). Si te pasa, el
-arreglo es simplemente volver a desplegar (`deploy --force=true`) una vez que confirmes que
-el contenedor ya responde — mismo mecanismo que el incidente #13 de `bitacora-fixes.md`
-(ahí la causa era Derby; hoy es SQL Server, pero es exactamente el mismo problema de orden).
+No hace falta levantar nada de base de datos aparte — H2 arranca sola en cuanto GlassFish
+abre la primera conexión (`AUTO_SERVER=TRUE` en la URL del pool). Por eso el orden ya no
+importa como con Derby/SQL Server (incidentes #13 y #16 de `bitacora-fixes.md`, ambos
+históricos: eran problemas de *otro* motor de base de datos que tardaba en estar listo).
 
 ```bash
-cd /home/robute/IdeaProjects/HelloJakarta-variante
-docker compose up -d                                # PRIMERO: SQL Server (ver sqlserver.md)
-
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 cd /home/robute/Documentos/codes/SanboxTEST/glassfish8/glassfish/bin
 
-./asadmin start-domain                              # DESPUES: arranca GF8
-./asadmin ping-connection-pool SQLServerPool        # confirma que SQL Server responde
-./asadmin deploy --force=true <ruta.war>            # solo si list-applications muestra la app rota
+./asadmin start-domain
+./asadmin ping-connection-pool H2Pool               # confirma que la base responde
+./asadmin deploy --force=true <ruta.war>            # solo si cambiaste/recompilaste codigo
 ./asadmin stop-domain
 ```
 
@@ -187,14 +171,14 @@ cd /home/robute/Documentos/codes/SanboxTEST/glassfish8/glassfish/bin
 |---|---|
 | `./asadmin start-domain` | Arranca el servidor (dominio `domain1`) |
 | `./asadmin stop-domain` | Lo apaga |
-| `./asadmin restart-domain` | Reinicia (hace falta después de agregar un `.jar` a `domain1/lib`, ver `sqlserver.md`) |
+| `./asadmin restart-domain` | Reinicia (hace falta después de agregar un `.jar` a `domain1/lib`, ver `h2.md`) |
 | `./asadmin list-applications` | Qué WARs están desplegados |
 | `./asadmin deploy --force=true <ruta.war>` | Despliega (o redepliega) un WAR |
 | `./asadmin undeploy <nombre-app>` | Quita una app desplegada |
-| `./asadmin list-jdbc-connection-pools` | Pools de conexión configurados (`SQLServerPool`, `DerbyPool` sin usar, `__TimerPool`) |
+| `./asadmin list-jdbc-connection-pools` | Pools de conexión configurados (`H2Pool`, más `SQLServerPool`/`DerbyPool` sin usar) |
 | `./asadmin list-jdbc-resources` | Recursos JNDI (`jdbc/...`) configurados |
-| `./asadmin ping-connection-pool SQLServerPool` | Prueba que la conexión a SQL Server funciona |
-| `./asadmin get "resources.jdbc-connection-pool.SQLServerPool.property.*"` | Ver host/puerto/usuario/BD real del pool |
+| `./asadmin ping-connection-pool H2Pool` | Prueba que la conexión a H2 funciona |
+| `./asadmin get "resources.jdbc-connection-pool.H2Pool.property.*"` | Ver la URL/usuario real del pool |
 
 **URLs útiles:**
 - App (frontend + API): `http://localhost:8080/HelloJakarta-variante/`

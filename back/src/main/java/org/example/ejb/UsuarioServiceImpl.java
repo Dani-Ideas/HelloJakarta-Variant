@@ -2,11 +2,11 @@ package org.example.ejb;
 
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
-import org.example.dto.UsuarioDTO;
+import org.example.dto.UsuarioDto;
 import org.example.lib.UsuarioRepository;
 import org.example.lib.UsuarioService;
 import org.example.mapper.UsuarioMapper;
-import org.example.model.Usuario;
+import org.example.model.UsuarioEty;
 
 import java.util.List;
 import java.util.Optional;
@@ -24,33 +24,33 @@ public class UsuarioServiceImpl implements UsuarioService {
     private final UsuarioMapper usuarioMapper = UsuarioMapper.INSTANCE;
 
     @Override
-    public UsuarioDTO crear(UsuarioDTO dto) {
-        Usuario creado = usuarioRepository.insert(usuarioMapper.toEntity(dto));
+    public UsuarioDto crear(UsuarioDto dto) {
+        UsuarioEty creado = usuarioRepository.insert(usuarioMapper.toEntity(dto));
         return usuarioMapper.toDTO(creado);
     }
 
     @Override
-    public List<UsuarioDTO> listar() {
+    public List<UsuarioDto> listar() {
         return usuarioRepository.findAll()
                 .map(usuarioMapper::toDTO)
                 .collect(Collectors.toList());
     }
 
     @Override
-    public UsuarioDTO buscarPorId(Long id) {
+    public UsuarioDto buscarPorId(Long id) {
         return usuarioMapper.toDTO(usuarioRepository.findById(id).orElse(null));
     }
 
     @Override
-    public UsuarioDTO actualizar(Long id, UsuarioDTO dto) {
-        Optional<Usuario> existente = usuarioRepository.findById(id);
+    public UsuarioDto actualizar(Long id, UsuarioDto dto) {
+        Optional<UsuarioEty> existente = usuarioRepository.findById(id);
         if (existente.isEmpty()) {
             return null;
         }
-        Usuario entidad = existente.get();
+        UsuarioEty entidad = existente.get();
         entidad.setNombre(dto.nombre());
         entidad.setRol(dto.rol());
-        Usuario actualizado = usuarioRepository.update(entidad);
+        UsuarioEty actualizado = usuarioRepository.update(entidad);
         return usuarioMapper.toDTO(actualizado);
     }
 

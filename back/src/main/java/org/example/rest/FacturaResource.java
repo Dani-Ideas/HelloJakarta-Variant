@@ -14,8 +14,6 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
-import org.example.dto.FacturaDTO;
-import org.example.dto.FacturaPatchDTO;
 import org.example.lib.FacturaService;
 
 import java.net.URI;

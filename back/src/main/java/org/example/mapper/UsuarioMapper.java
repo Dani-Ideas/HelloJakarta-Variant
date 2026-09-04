@@ -1,9 +1,8 @@
 package org.example.mapper;
 
-import org.example.dto.UsuarioDTO;
-import org.example.model.Usuario;
-import org.mapstruct.Mapper;
-import org.mapstruct.Mapping;
+import org.example.dto.UsuarioDto;
+import org.example.model.UsuarioEty;
+import org.mapstruct.*;
 import org.mapstruct.factory.Mappers;
 
 // MapStruct genera UsuarioMapperImpl en tiempo de compilacion (revisa
@@ -13,11 +12,13 @@ import org.mapstruct.factory.Mappers;
 public interface UsuarioMapper {
 
     UsuarioMapper INSTANCE = Mappers.getMapper(UsuarioMapper.class);
-
-    UsuarioDTO toDTO(Usuario entidad);
-
     // id se ignora a proposito: una entidad nueva nunca debe nacer con el id que
     // (si acaso) mando el cliente en el JSON -- lo genera la base de datos.
     @Mapping(target = "id", ignore = true)
-    Usuario toEntity(UsuarioDTO dto);
+    UsuarioEty toEntity(UsuarioDto usuarioDto);
+
+    UsuarioDto toDto(UsuarioEty usuarioEty);
+
+    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    UsuarioEty partialUpdate(UsuarioDto usuarioEtyDto, @MappingTarget UsuarioEty usuarioEty);
 }

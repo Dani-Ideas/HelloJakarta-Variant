@@ -10,7 +10,6 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.example.dto.SesionCajaDTO;
 import org.example.lib.SesionCajaService;
 
 import java.util.List;

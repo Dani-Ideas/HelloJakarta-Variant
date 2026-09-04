@@ -1,9 +1,8 @@
 package org.example.mapper;
 
-import org.example.dto.ProductoDTO;
-import org.example.model.Producto;
-import org.mapstruct.Mapper;
-import org.mapstruct.Mapping;
+import org.example.dto.ProductoDto;
+import org.example.model.ProductoEty;
+import org.mapstruct.*;
 import org.mapstruct.factory.Mappers;
 
 // MapStruct: esta interfaz ya NO tiene implementacion escrita a mano -- MapStruct genera
@@ -16,11 +15,13 @@ import org.mapstruct.factory.Mappers;
 public interface ProductoMapper {
 
     ProductoMapper INSTANCE = Mappers.getMapper(ProductoMapper.class);
-
-    ProductoDTO toDTO(Producto producto);
-
     // id se ignora a proposito: un Producto nuevo nunca debe nacer con el id que (si
     // acaso) mando el cliente en el JSON -- lo genera la base de datos (IDENTITY).
     @Mapping(target = "id", ignore = true)
-    Producto toEntity(ProductoDTO dto);
+    ProductoEty toEntity(ProductoDto productoDto);
+
+    ProductoDto toDto(ProductoEty productoEty);
+
+    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    ProductoEty partialUpdate(ProductoDto productoDto, @MappingTarget ProductoEty productoEty);
 }

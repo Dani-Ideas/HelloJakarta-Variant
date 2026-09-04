@@ -1,5 +1,12 @@
 # SQL Server real (Docker) — reemplazo de `DerbyPool`
 
+> **HISTÓRICO — ya no es el motor activo.** El proyecto migró de SQL Server a **H2
+> embebida** (sin Docker) — ver `Documentation/h2.md` para el estado actual y el porqué
+> (incidente #17 de `bitacora-fixes.md`). `SQLServerPool` se dejó configurado en GlassFish
+> sin usarse, por si hiciera falta volver; el contenedor de Docker queda a tu criterio si
+> lo apagas/borras (`docker compose stop` / `down`). Este documento se conserva completo
+> como referencia de cómo se armó en su momento.
+
 Este documento explica cómo quedó armada la base de datos real de este proyecto: un SQL
 Server de verdad, corriendo en un contenedor Docker, en vez de la Derby embebida que trae
 GlassFish. El objetivo: poder conectarte tú mismo (Azure Data Studio, DBeaver, `sqlcmd`,

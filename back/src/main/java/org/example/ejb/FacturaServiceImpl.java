@@ -2,15 +2,14 @@ package org.example.ejb;
 
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
-import org.example.dto.FacturaDTO;
-import org.example.dto.FacturaPatchDTO;
+import org.example.dto.FacturaDto;
 import org.example.lib.FacturaRepository;
 import org.example.lib.FacturaService;
 import org.example.lib.ProductoRepository;
 import org.example.mapper.FacturaMapper;
-import org.example.model.Factura;
-import org.example.model.FacturaDetalle;
-import org.example.model.Producto;
+import org.example.model.FacturaDetalleEty;
+import org.example.model.FacturaEty;
+import org.example.model.ProductoEty;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -37,18 +36,22 @@ public class FacturaServiceImpl implements FacturaService {
     private final FacturaMapper facturaMapper = FacturaMapper.INSTANCE;
 
     @Override
-    public FacturaDTO crear(FacturaDTO dto) {
-        Factura factura = facturaMapper.toEntity(dto);
+    public FacturaDto crear(FacturaDto dto) {
+        FacturaEty factura = facturaMapper.toEntity(dto);
 
         if (factura.getFecha() == null) {
             factura.setFecha(LocalDate.now());
         }
 
         BigDecimal total = BigDecimal.ZERO;
-        for (FacturaDetalle detalle : factura.getDetalles()) {
+        for (FacturaDetalleEty detalle : factura.getDetalles()) {
             // El precio SIEMPRE se recalcula del lado del servidor, nunca se confia
             // en el precio que mande el cliente en el JSON.
-            Producto producto = productoRepository.findById(detalle.getProducto().getId()).orElse(null);
+            ProductoEty producto = productoRepository.findById(
+                    detalle.
+                    getProducto().
+                    getId()).
+                    orElse(null);
             detalle.setProducto(producto);
             detalle.setPrecioUnitario(producto.getPrecio());
             detalle.setSubtotal(producto.getPrecio().multiply(BigDecimal.valueOf(detalle.getCantidad())));

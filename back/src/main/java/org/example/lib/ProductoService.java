@@ -1,15 +1,14 @@
 package org.example.lib;
 
-import org.example.dto.ProductoDTO;
-import org.example.dto.ProductoPatchDTO;
+import org.example.dto.ProductoDto;
 
-public interface ProductoService extends Service<ProductoDTO, Long> {
+public interface ProductoService extends Service<ProductoDto, Long> {
 
-    ProductoDTO actualizar(Long id, ProductoDTO dto);
+    ProductoDto actualizar(Long id, ProductoDto dto);
 
     // PATCH: reemplazo parcial. A diferencia de actualizar() (PUT), aqui solo se tocan
     // los campos que vienen no-null en el DTO -- ver ProductoPatchDTO.
-    ProductoDTO patch(Long id, ProductoPatchDTO cambios);
+    ProductoDto patch(Long id, ProductoPatchDto cambios);
 
     boolean eliminar(Long id);
 }

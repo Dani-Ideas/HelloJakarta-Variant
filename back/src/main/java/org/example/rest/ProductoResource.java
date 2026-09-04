@@ -15,12 +15,9 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
-import org.example.dto.ProductoDTO;
-import org.example.dto.ProductoPatchDTO;
 import org.example.lib.ProductoService;
 
 import java.net.URI;
-import java.util.List;
 
 // El Resource SOLO traduce peticion HTTP -> llamada de metodo, y resultado de metodo ->
 // respuesta HTTP (codigo de estado, headers). No sabe nada de negocio, no sabe nada de

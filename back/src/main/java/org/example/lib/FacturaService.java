@@ -1,13 +1,12 @@
 package org.example.lib;
 
-import org.example.dto.FacturaDTO;
-import org.example.dto.FacturaPatchDTO;
+import org.example.dto.ProductoDto;
 
-public interface FacturaService extends Service<FacturaDTO, Long> {
+public interface FacturaService extends Service<ProductoDto, Long> {
 
-    FacturaDTO actualizar(Long id, FacturaDTO dto);
+    ProductoDto actualizar(Long id, ProductoDto dto);
 
     // PATCH: solo corrige los campos de encabezado que vengan no-null en el DTO --
     // ver FacturaPatchDTO. No requiere reenviar numero/fecha/cliente/detalles completos.
-    FacturaDTO patch(Long id, FacturaPatchDTO cambios);
+    ProductoDto patch(Long id, ProductoDto cambios);
 }

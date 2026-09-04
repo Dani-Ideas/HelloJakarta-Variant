@@ -2,7 +2,7 @@ package org.example.lib;
 
 import jakarta.data.repository.CrudRepository;
 import jakarta.data.repository.Repository;
-import org.example.model.Factura;
+import org.example.model.FacturaEty;
 
 // Jakarta Data: sin implementacion escrita a mano (no hay FacturaRepositoryImpl en ejb/).
 // El "actualizar" con copiado de campos de encabezado ahora vive en FacturaServiceImpl.
@@ -10,5 +10,5 @@ import org.example.model.Factura;
 // factura ya emitida no tiene sentido de negocio real -- aunque deleteById() exista
 // heredado de CrudRepository.
 @Repository
-public interface FacturaRepository extends CrudRepository<Factura, Long> {
+public interface FacturaRepository extends CrudRepository<FacturaEty, Long> {
 }

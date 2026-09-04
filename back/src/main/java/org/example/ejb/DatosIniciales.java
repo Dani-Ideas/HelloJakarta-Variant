@@ -5,7 +5,6 @@ import jakarta.ejb.Singleton;
 import jakarta.ejb.Startup;
 import jakarta.inject.Inject;
 import org.example.lib.ProductoRepository;
-import org.example.model.Producto;
 
 import java.math.BigDecimal;
 

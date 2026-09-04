@@ -2,7 +2,7 @@ package org.example.lib;
 
 import jakarta.data.repository.CrudRepository;
 import jakarta.data.repository.Repository;
-import org.example.model.Producto;
+import org.example.model.ProductoEty;
 
 // PILOTO Jakarta Data: esta interfaz ya NO tiene implementacion escrita a mano -- no
 // existe (ni debe existir) un "ProductoRepositoryImpl" en ejb/. El proveedor (EclipseLink,
@@ -11,5 +11,5 @@ import org.example.model.Producto;
 // AbstractRepository.aplicarCambios) se movio a ProductoServiceImpl -- ya no hay donde
 // escribir ese codigo aqui, y de hecho es logica de negocio, no de acceso a datos.
 @Repository
-public interface ProductoRepository extends CrudRepository<Producto, Long> {
+public interface ProductoRepository extends CrudRepository<ProductoEty, Long> {
 }

@@ -4,11 +4,8 @@ import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import org.example.dto.SesionCajaDTO;
 import org.example.lib.SesionCajaRepository;
 import org.example.lib.SesionCajaService;
-import org.example.mapper.SesionCajaMapper;
-import org.example.model.SesionCaja;
 
 import java.time.LocalDateTime;
 import java.util.List;

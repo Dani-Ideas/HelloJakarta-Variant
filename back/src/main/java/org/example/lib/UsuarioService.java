@@ -1,10 +1,10 @@
 package org.example.lib;
 
-import org.example.dto.UsuarioDTO;
+import org.example.dto.UsuarioDto;
 
-public interface UsuarioService extends Service<UsuarioDTO, Long> {
+public interface UsuarioService extends Service<UsuarioDto, Long> {
 
-    UsuarioDTO actualizar(Long id, UsuarioDTO dto);
+    UsuarioDto actualizar(Long id, UsuarioDto dto);
 
     boolean eliminar(Long id);
 }

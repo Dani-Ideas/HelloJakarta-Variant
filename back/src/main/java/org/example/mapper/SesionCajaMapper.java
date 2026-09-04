@@ -1,44 +1,15 @@
 package org.example.mapper;
 
-import org.example.dto.SesionCajaDTO;
-import org.example.model.SesionCaja;
+import org.example.dto.SesionCajaDto;
+import org.example.model.SesionCajaEty;
+import org.mapstruct.*;
 
-import java.util.stream.Collectors;
+@Mapper(unmappedTargetPolicy = ReportingPolicy.IGNORE, componentModel = MappingConstants.ComponentModel.CDI)
+public interface SesionCajaMapper {
+    SesionCajaEty toEntity(SesionCajaDto sesionCajaDto);
 
-public final class SesionCajaMapper {
+    SesionCajaDto toDto(SesionCajaEty sesionCajaEty);
 
-    private SesionCajaMapper() {
-    }
-
-    public static SesionCajaDTO toDTO(SesionCaja sesion) {
-        if (sesion == null) {
-            return null;
-        }
-        SesionCajaDTO dto = new SesionCajaDTO();
-        dto.setId(sesion.getId());
-        dto.setFApertura(sesion.getFApertura());
-        dto.setFCierre(sesion.getFCierre());
-        dto.setCerrada(sesion.isCerrada());          // boolean primitivo -> isCerrada(), no getCerrada()
-        dto.setMontoApertura(sesion.getMontoApertura());
-        dto.setMontoCierre(sesion.getMontoCierre());
-        dto.setCajero(sesion.getCajero());
-        dto.setLocacion(sesion.getLocacion());
-        dto.setFacturas(sesion.getFacturas().stream()
-                .map(FacturaMapper.INSTANCE::toDTO)   // FacturaMapper ahora es MapStruct
-                                                        // (interfaz + INSTANCE), ya no un
-                                                        // metodo static -- unico cambio
-                                                        // que le tocaba a este archivo.
-                .collect(Collectors.toList()));
-        return dto;
-    }
-
-    public static SesionCaja toEntity(SesionCajaDTO dto) {
-        SesionCaja sesion = new SesionCaja();
-        sesion.setCajero(dto.getCajero());
-        sesion.setLocacion(dto.getLocacion());
-        sesion.setMontoApertura(dto.getMontoApertura());
-        // fApertura, cerrada y facturas NO se copian del dto al abrir -- los decide el
-        // servidor (Paso 3), igual que FacturaServiceImpl decide "fecha" si no viene.
-        return sesion;
-    }
+    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    SesionCajaEty partialUpdate(SesionCajaDto sesionCajaDto, @MappingTarget SesionCajaEty sesionCajaEty);
 }

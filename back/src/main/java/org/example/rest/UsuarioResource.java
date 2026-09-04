@@ -14,7 +14,6 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
-import org.example.dto.UsuarioDTO;
 import org.example.lib.UsuarioService;
 
 import java.net.URI;
