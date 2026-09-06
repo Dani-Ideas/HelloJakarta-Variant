@@ -19,7 +19,10 @@ import org.example.lib.UsuarioService;
 
 import java.net.URI;
 
-@Path("/usuarios")
+import static org.example.rest.ControllerRegistry.Endpoints.USUARIOS;
+
+// Se registra en ControllerRegistry.register(UsuarioController.class).
+@Path(USUARIOS)
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class UsuarioController {

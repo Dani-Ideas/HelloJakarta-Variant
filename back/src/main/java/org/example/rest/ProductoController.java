@@ -21,13 +21,17 @@ import org.example.lib.ProductoService;
 
 import java.net.URI;
 
+import static org.example.rest.ControllerRegistry.Endpoints.PRODUCTOS;
+
 // El Controller SOLO traduce peticion HTTP -> llamada de metodo, y resultado de metodo ->
 // respuesta HTTP (codigo de estado, headers). No sabe nada de negocio, no sabe nada de
 // EJB/JPA -- el conflicto de FK al borrar se resuelve en el ExceptionMapper
 // (EJBExceptionMapper), no aqui. Y no sabe nada de ControllerRegistry -- la relacion va en
 // un solo sentido, el registro conoce a este Controller, este Controller no conoce al
 // registro.
-@Path("/productos")
+//
+// Se registra en ControllerRegistry.register(ProductoController.class).
+@Path(PRODUCTOS)
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class ProductoController {

@@ -50,6 +50,16 @@
             <artifactId>mapstruct</artifactId>
             <version>1.6.3</version>
         </dependency>
+        <!-- Solo para poder compilar contra ResourceConfig (ControllerRegistry.register()).
+             provided: GlassFish 8 ya trae Jersey 4.0.2 puesto en el server, no hace falta
+             empaquetarlo en el WAR. Version fijada igual a la que trae el server para
+             evitar cualquier desfase de API. -->
+        <dependency>
+            <groupId>org.glassfish.jersey.core</groupId>
+            <artifactId>jersey-server</artifactId>
+            <version>4.0.2</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>

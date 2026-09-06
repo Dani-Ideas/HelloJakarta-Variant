@@ -934,3 +934,117 @@ proyecto real:
 Cero cambios de lógica, solo nombres de clase/archivo + las referencias dentro del `Set` de
 `ControllerRegistry`. Verificado con `curl` que los 4 endpoints (`/productos`, `/facturas`,
 `/sesiones-caja`, `/usuarios`) siguen respondiendo `200` después del rename.
+
+---
+
+## 23. Páginas de frontend nuevas: "Sesiones de caja" y "Usuarios"
+
+`SesionCajaController`/`UsuarioController` ya existían con soporte completo en el backend
+desde hace varios incidentes, pero sin ninguna pantalla propia en el frontend — se agregó
+esa parte, copiando el mismo patrón que ya existía para `Producto`.
+
+**8 archivos nuevos** (`api/types.ts`/`client.ts` extendidos, más 6 archivos nuevos:
+`SesionCajaTable/Form/Panel.tsx`, `UsuariosTable/Form/Panel.tsx`, `SesionCajaPage.tsx`,
+`UsuariosPage.tsx`), más rutas nuevas en `router.tsx` y links en `RootLayout.tsx`/
+`HomePage.tsx`.
+
+**Decisión de diseño replicada del backend**: `SesionCajaPanel` solo tiene "listar" y
+"abrir caja" (`crear`) — sin editar/eliminar, porque `SesionCajaController` nunca expuso
+esos verbos (decisión de negocio de incidentes anteriores: no tiene sentido borrar una
+sesión de caja con dinero real ya registrado). `UsuariosPanel` sí tiene las 4 acciones
+completas, igual que `Producto`, porque `UsuarioController` sí las expone todas.
+
+**Verificado**: `npx tsc --noEmit` sin errores, `mvn package` reconstruyó el frontend
+limpio, redesplegado, y `curl` a `/sesiones-caja`/`usuarios` (tanto la ruta SPA como la
+API) responde `200` con datos reales. No se confirmó visualmente en navegador en esta
+sesión (sin herramienta de browser disponible).
+
+**Documentación nueva**: `Documentation/paginas-sesion-caja-y-usuarios.md` (explicación en
+español simple, sin jerga técnica, con links a los documentos que ya cubren el "cómo"
+técnico en vez de repetirlo) y actualización de `mapeo-frontend-backend.md` (las 2 páginas
+nuevas y su tabla resumen, que antes las marcaba ❌ "sin página propia").
+
+---
+
+## 24. Constantes de `@Path` en `ControllerRegistry.Endpoints`, y por qué `@Inject` no va en la clase del Controller
+
+**Motivo:** reemplazar los strings literales de cada `@Path("/productos")`, etc., por
+constantes compartidas, para tener un solo lugar donde vive cada ruta.
+
+**Intento inicial (roto, editado a mano fuera de esta sesión)**: `FacturaController.java`
+apareció con `import org.example.rest.ControllerRegistry.ENDPOINS.CONSTANTES.FACTURAS;`
+(una clase anidada de 2 niveles que no existía en ningún lado) y una anotación suelta
+`@Inyect` (typo de `@Inject`) puesta a nivel de **clase**, sin import y sin ningún campo
+al que aplicara.
+
+**Por qué `@Inject` a nivel de clase no tiene sentido aquí:** `@Inject`/`@EJB` marcan un
+**punto de inyección** (un campo, un parámetro de constructor) — le dicen al contenedor
+"pon algo aquí". No es una anotación que se le pone a una clase para "activarla" o hacerla
+inyectable. `FacturaController` ya usa `@EJB private FacturaService facturaService;` y
+`@Context private UriInfo uriInfo;` — ninguno de los dos necesita nada adicional a nivel de
+clase, y no había ningún campo nuevo al que `@Inject` pudiera aplicar.
+
+**Fix real, aplicado:**
+- `ControllerRegistry` ganó una clase anidada `public static final class Endpoints` con
+  `public static final String API/PRODUCTOS/FACTURAS/SESIONES_CAJA/USUARIOS = "..."`.
+  Un solo nivel de anidamiento, no dos.
+- Cada `Controller` la referencia con `import static
+  org.example.rest.ControllerRegistry.Endpoints.FACTURAS;` (import estático de un campo,
+  la forma correcta en Java — un `import` normal no puede traer un campo, solo tipos) y
+  usa `@Path(FACTURAS)` en vez del string literal. Esto es legal porque una anotación solo
+  acepta **constantes de tiempo de compilación** como valor, y un `public static final
+  String` cuenta como tal — el compilador sustituye el valor literal directo, no hay
+  ninguna lectura en tiempo de ejecución de por medio.
+- El `@ApplicationPath` de `ControllerRegistry` también pasó a usar
+  `Endpoints.API` en vez de `"/api"` suelto.
+- Se quitó el `@Inyect` suelto y se restauraron los `@Produces`/`@Consumes` que se habían
+  perdido en la edición a mano.
+
+**Aclaración sobre "activar/desactivar endpoints"** (lo que se buscaba con
+`add.resources(FacturaController)`, un método que no existe en la API estándar de JAX-RS):
+eso ya lo hace el `Set.of(...)` de `getClasses()` del incidente #19 — si una clase no está
+en ese `Set`, no se expone, tenga o no `@Path`. Las constantes nuevas no cambian ese
+mecanismo, solo evitan que el mismo string de ruta quede escrito dos veces y se
+desincronice por un typo.
+
+**Verificado**: `mvn compile`/`mvn package` (con `JAVA_HOME` apuntando a JDK 21) sin
+errores — se confirmó además que `ControllerRegistry$Endpoints.class` se generó en
+`target/classes/org/example/rest/`, prueba de que la clase anidada compiló bien.
+
+---
+
+## 25. `ControllerRegistry` de `Application.getClasses()` a `ResourceConfig.register(...)`
+
+**Motivo:** el `add.resources(FacturaController)` que se pedía en el incidente #24 sí tiene
+un equivalente real en Jersey (el JAX-RS que trae GlassFish, no un estándar de la
+especificación JAX-RS en sí): `org.glassfish.jersey.server.ResourceConfig` extiende
+`Application` y agrega un método de instancia `register(Class<?>)`, pensado para llamarse
+dentro de un constructor — encaja casi exacto con lo que se pedía.
+
+**Cambios:**
+- `pom.xml`: nueva dependencia `org.glassfish.jersey.core:jersey-server:4.0.2` (`provided`
+  — GlassFish 8 ya trae ese jar puesto en el server; la versión se fijó igual a la que
+  GlassFish 8 realmente trae, confirmada leyendo el `MANIFEST.MF` del
+  `jersey-server.jar` real dentro de `glassfish8/glassfish/modules/`, para no arriesgar un
+  desfase de API entre lo que se compila y lo que corre).
+- `ControllerRegistry`: `extends Application` con `@Override getClasses()` devolviendo un
+  `Set.of(...)` → `extends ResourceConfig` con un constructor que llama `register(X.class)`
+  una vez por cada `Controller`/`Provider`. Mismo efecto — si una clase no pasa por
+  `register()`, no se expone — solo cambia la forma de declararlo.
+- Cada `Controller` ganó un comentario señalando dónde se registra
+  (`ControllerRegistry.register(XController.class)`), para que quede visible desde el
+  archivo del Controller sin que el Controller tenga que importar ni conocer al registro.
+
+**Regresión encontrada y corregida de paso**: la edición manual del incidente #24 en
+`FacturaController.java` había quitado `@Produces`/`@Consumes` (los otros 3 Controllers sí
+los conservaban) — se restauraron.
+
+**Error repetido, otra vez, por mí esta vez**: al escribir el comentario nuevo del
+`pom.xml` volví a usar `--` dentro de un comentario XML — el mismo error documentado ya en
+los incidentes #9, #11 y #12. Se corrigió cambiando el guión largo por punto y aparte.
+Cuenta ya van 4 veces con el mismo error exacto en este proyecto.
+
+**Verificado**: `mvn clean package` limpio, `unzip -l` confirmando que `jersey-server` NO
+quedó empaquetado en el WAR (sigue siendo `provided`, lo sirve GlassFish), y `curl` a los 4
+endpoints (`/productos`, `/facturas`, `/sesiones-caja`, `/usuarios`) respondiendo `200`
+después del redeploy.

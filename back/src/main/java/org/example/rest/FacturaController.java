@@ -20,9 +20,14 @@ import org.example.lib.FacturaService;
 
 import java.net.URI;
 
+import static org.example.rest.ControllerRegistry.Endpoints.FACTURAS;
+
 // A proposito NO tiene @DELETE: borrar una factura ya emitida no tiene sentido de
 // negocio real (a diferencia de Producto, que si se puede dar de baja).
-@Path("/facturas")
+//
+// Se registra en ControllerRegistry.register(FacturaController.class) -- este archivo no
+// conoce al registro, la relacion va en un solo sentido (ver comentario de ControllerRegistry).
+@Path(FACTURAS)
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class FacturaController {

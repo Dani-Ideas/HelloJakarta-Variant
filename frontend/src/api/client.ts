@@ -1,4 +1,4 @@
-import type { FacturaDTO, ProductoDTO } from "./types";
+import type { FacturaDTO, ProductoDTO, SesionCajaDTO, UsuarioDTO } from "./types";
 
 // Ruta relativa: en `npm run dev` la resuelve el proxy de vite.config.ts hacia GlassFish;
 // en produccion, el frontend vive dentro del mismo WAR, asi que resuelve al mismo origen.
@@ -56,4 +56,43 @@ export function updateProducto(id: number, producto: ProductoInput): Promise<Pro
 
 export function deleteProducto(id: number): Promise<void> {
   return request<void>(`/productos/${id}`, { method: "DELETE" });
+}
+
+// SesionCajaController solo expone listar/buscar/crear -- sin actualizar/eliminar por
+// REST (ver Documentation/bitacora-fixes.md), por eso aqui solo hay 2 funciones, no 5.
+export function fetchSesionesCaja(): Promise<SesionCajaDTO[]> {
+  return request<SesionCajaDTO[]>("/sesiones-caja");
+}
+
+export type SesionCajaInput = Pick<SesionCajaDTO, "cajero" | "locacion" | "montoApertura">;
+
+export function crearSesionCaja(sesion: SesionCajaInput): Promise<SesionCajaDTO> {
+  return request<SesionCajaDTO>("/sesiones-caja", {
+    method: "POST",
+    body: JSON.stringify(sesion),
+  });
+}
+
+export function fetchUsuarios(): Promise<UsuarioDTO[]> {
+  return request<UsuarioDTO[]>("/usuarios");
+}
+
+export type UsuarioInput = Omit<UsuarioDTO, "id">;
+
+export function createUsuario(usuario: UsuarioInput): Promise<UsuarioDTO> {
+  return request<UsuarioDTO>("/usuarios", {
+    method: "POST",
+    body: JSON.stringify(usuario),
+  });
+}
+
+export function updateUsuario(id: number, usuario: UsuarioInput): Promise<UsuarioDTO> {
+  return request<UsuarioDTO>(`/usuarios/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(usuario),
+  });
+}
+
+export function deleteUsuario(id: number): Promise<void> {
+  return request<void>(`/usuarios/${id}`, { method: "DELETE" });
 }

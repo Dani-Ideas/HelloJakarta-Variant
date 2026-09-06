@@ -24,3 +24,24 @@ export interface FacturaDTO {
   total: number;
   detalles: FacturaDetalleDTO[];
 }
+
+export interface SesionCajaDTO {
+  id: number;
+  cajero: string;
+  cerrada: boolean;
+  fApertura: string | null;
+  fCierre: string | null;
+  locacion: string;
+  montoApertura: number;
+  montoCierre: number | null;
+}
+
+// Mismos 3 valores que el enum Rol.java del backend -- si el backend agrega un valor
+// nuevo, hay que agregarlo aqui tambien a mano (TypeScript no lo sabe solo).
+export type Rol = "ADMIN" | "VENDEDOR" | "CAJERO";
+
+export interface UsuarioDTO {
+  id: number;
+  nombre: string;
+  rol: Rol;
+}

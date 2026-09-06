@@ -15,7 +15,10 @@ import org.example.lib.SesionCajaService;
 
 import java.util.List;
 
-@Path("/sesiones-caja")
+import static org.example.rest.ControllerRegistry.Endpoints.SESIONES_CAJA;
+
+// Se registra en ControllerRegistry.register(SesionCajaController.class).
+@Path(SESIONES_CAJA)
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class SesionCajaController {
