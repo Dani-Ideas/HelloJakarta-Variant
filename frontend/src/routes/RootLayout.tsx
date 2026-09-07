@@ -13,7 +13,6 @@ export function RootLayout() {
     <div className="pagina">
       <header className="encabezado">
         <h1>HelloJakarta</h1>
-        <p className="subtitulo">Panel de práctica — Jakarta EE 10 + TanStack</p>
       </header>
 
       <main>
