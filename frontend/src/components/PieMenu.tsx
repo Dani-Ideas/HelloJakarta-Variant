@@ -1,9 +1,13 @@
+import { useState } from "react"
 import { Link, type LinkProps } from "@tanstack/react-router"
 import type { LucideIcon } from "lucide-react"
 
 export type PieMenuItem = {
   to: LinkProps["to"]
   label: string
+  // Texto de la vista previa que aparece al pasar el mouse/foco sobre la rebanada --
+  // que "espera" al usuario si le da clic a esta opcion.
+  descripcion: string
   icon: LucideIcon
 }
 
@@ -44,56 +48,103 @@ function pathGajo(anguloInicioDeg: number, anguloFinDeg: number) {
   ].join(" ")
 }
 
+// Mismo tono que ya se usaba por rebanada (HSL repartido segun la posicion), pero
+// parametrizado para poder pedirlo tambien fuera del render de cada <path> -- lo usan
+// tanto el relleno de la rebanada como el fondo/la vista previa cuando esta activa.
+function tonoDeGajo(indice: number, total: number) {
+  return Math.round((indice * 360) / total)
+}
+
 // Menu tipo "pastel": cada rebanada es del mismo tamano (360/items.length) y navega a su
 // ruta directo al hacer click -- no hay boton para "abrir/cerrar", las rebanadas SON el
 // menu, siempre visibles.
 export function PieMenu({ items, size = 260 }: Props) {
   const total = items.length
+  // Rebanada con hover/foco encima ahora mismo (null = ninguna) -- controla dos cosas a
+  // la vez: la vista previa de texto de abajo, y el tinte de fondo detras del SVG.
+  const [activo, setActivo] = useState<number | null>(null)
+
   if (total === 0) return null
 
-  return (
-    <svg
-      viewBox="0 0 200 200"
-      role="img"
-      aria-label="Menú de opciones"
-      className="mx-auto h-auto w-full"
-      style={{ maxWidth: size }}
-    >
-      {items.map((item, indice) => {
-        const inicio = (indice * 360) / total
-        const fin = ((indice + 1) * 360) / total
-        const medio = (inicio + fin) / 2
-        const etiqueta = puntoPolar(RADIO_ETIQUETA, medio)
-        const Icono = item.icon
-        // Color repartido en HSL segun la posicion -- si manana items.length cambia (3,
-        // 7, 20...), los colores se siguen repartiendo parejos solos, sin tocar nada aqui.
-        const color = `hsl(${Math.round((indice * 360) / total)}, 55%, 45%)`
+  const itemActivo = activo !== null ? items[activo] : null
+  const tonoActivo = activo !== null ? tonoDeGajo(activo, total) : null
 
-        return (
-          <Link key={String(item.to)} to={item.to} className="group/gajo outline-none">
-            <path
-              d={pathGajo(inicio, fin)}
-              fill={color}
-              stroke="var(--background)"
-              strokeWidth={3}
-              className="cursor-pointer transition-opacity group-hover/gajo:opacity-85 group-focus-visible/gajo:opacity-85"
-            />
-            <foreignObject
-              x={etiqueta.x - 40}
-              y={etiqueta.y - 34}
-              width={80}
-              height={68}
-              className="pointer-events-none"
-            >
-              <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center text-white">
-                <Icono className="size-5" />
-                <span className="text-xs leading-tight font-medium">{item.label}</span>
-              </div>
-            </foreignObject>
-            <title>{item.label}</title>
-          </Link>
-        )
-      })}
-    </svg>
+  return (
+    <div className="mx-auto" style={{ maxWidth: size }}>
+      <div
+        className="rounded-2xl p-4 transition-colors duration-300 ease-out"
+        style={{
+          // "ligeramente" -- por eso el alpha bajo (0.12): el fondo solo insinua el color
+          // de la rebanada activa, nunca lo reemplaza por completo.
+          backgroundColor:
+            tonoActivo !== null ? `hsla(${tonoActivo}, 55%, 45%, 0.12)` : "transparent",
+        }}
+      >
+        <svg
+          viewBox="0 0 200 200"
+          role="img"
+          aria-label="Menú de opciones"
+          className="mx-auto h-auto w-full"
+        >
+          {items.map((item, indice) => {
+            const inicio = (indice * 360) / total
+            const fin = ((indice + 1) * 360) / total
+            const medio = (inicio + fin) / 2
+            const etiqueta = puntoPolar(RADIO_ETIQUETA, medio)
+            const Icono = item.icon
+            // Color repartido en HSL segun la posicion -- si manana items.length cambia (3,
+            // 7, 20...), los colores se siguen repartiendo parejos solos, sin tocar nada aqui.
+            const color = `hsl(${tonoDeGajo(indice, total)}, 55%, 45%)`
+
+            return (
+              <Link
+                key={String(item.to)}
+                to={item.to}
+                className="group/gajo outline-none"
+                onMouseEnter={() => setActivo(indice)}
+                onMouseLeave={() => setActivo((actual) => (actual === indice ? null : actual))}
+                onFocus={() => setActivo(indice)}
+                onBlur={() => setActivo((actual) => (actual === indice ? null : actual))}
+              >
+                <path
+                  d={pathGajo(inicio, fin)}
+                  fill={color}
+                  stroke="var(--background)"
+                  strokeWidth={3}
+                  className="cursor-pointer transition-opacity group-hover/gajo:opacity-85 group-focus-visible/gajo:opacity-85"
+                />
+                <foreignObject
+                  x={etiqueta.x - 40}
+                  y={etiqueta.y - 34}
+                  width={80}
+                  height={68}
+                  className="pointer-events-none"
+                >
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center text-white">
+                    <Icono className="size-5" />
+                    <span className="text-xs leading-tight font-medium">{item.label}</span>
+                  </div>
+                </foreignObject>
+                <title>{item.label}</title>
+              </Link>
+            )
+          })}
+        </svg>
+      </div>
+
+      {/* Vista previa de texto: siempre ocupa el mismo alto (min-h) para que el layout de
+          abajo no "salte" al aparecer/desaparecer, y solo cambia su opacidad -- así la
+          transición se siente como un fade, no como un contenido que entra empujando. */}
+      <div className="mt-3 min-h-16 text-center">
+        {itemActivo && (
+          <div className="animate-in fade-in duration-200">
+            <p className="text-sm font-semibold" style={{ color: `hsl(${tonoActivo}, 55%, 45%)` }}>
+              {itemActivo.label}
+            </p>
+            <p className="text-xs text-muted-foreground">{itemActivo.descripcion}</p>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
