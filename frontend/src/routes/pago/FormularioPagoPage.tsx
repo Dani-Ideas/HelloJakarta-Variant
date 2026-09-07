@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { createProducto } from "@/api/client"
 import type { ProductoDTO } from "@/api/types"
@@ -32,7 +33,7 @@ import {
   AttachmentMedia,
   AttachmentTitle,
 } from "@/components/ui/attachment"
-import { CheckCircle2Icon, FileTextIcon, TriangleAlertIcon } from "lucide-react"
+import { ArrowLeftIcon, CheckCircle2Icon, FileTextIcon, TriangleAlertIcon } from "lucide-react"
 
 type Preferencia = "opcion1" | "opcion2" | "opcion3"
 type EstadoPago = "idle" | "procesando" | "listo"
@@ -231,6 +232,13 @@ export function FormularioPagoPage() {
 
   return (
     <section className="max-w-2xl">
+      <Button variant="outline" size="sm" asChild className="mb-4">
+        <Link to="/">
+          <ArrowLeftIcon />
+          Volver al menú principal
+        </Link>
+      </Button>
+
       <h2>Opción 2 · Formulario de pago</h2>
       <p className="mb-4 text-sm text-muted-foreground">
         Carrusel de {PASOS.length} pasos: en cuanto uno queda bien lleno, avanza solo al

@@ -1048,3 +1048,61 @@ Cuenta ya van 4 veces con el mismo error exacto en este proyecto.
 quedó empaquetado en el WAR (sigue siendo `provided`, lo sirve GlassFish), y `curl` a los 4
 endpoints (`/productos`, `/facturas`, `/sesiones-caja`, `/usuarios`) respondiendo `200`
 después del redeploy.
+
+---
+
+## 26. Rastreo de referencia: cómo `FormularioPagoPage` llega a la base de datos (POST /productos)
+
+**No es un incidente/bug — es una nota de referencia** para no tener que volver a rastrear
+capa por capa la próxima vez que se pregunte "¿por dónde pasa esto hasta la base de datos?".
+Corresponde al carrusel de pago (`frontend/src/routes/pago/FormularioPagoPage.tsx`), en la
+versión que agrega el paso "Producto" y crea un producto real al "pagar" (guardada aparte
+como `.tsx.ejemplo`, no comiteada — ver flujo de trabajo con `*.ejemplo` de esta sesión).
+
+**1. Frontend, componente** — al activar el switch de "Simular pago":
+```tsx
+const crearProductoMutation = useMutation({ mutationFn: createProducto })
+crearProductoMutation.mutate({ nombre: nombreProducto, sku, precio: Number(precio), stock: Number(stock) })
+```
+
+**2. Frontend, `frontend/src/api/client.ts`** — arma la petición HTTP real:
+```ts
+const API_BASE = "/HelloJakarta-variante/api";
+export function createProducto(producto: ProductoInput): Promise<ProductoDTO> {
+  return request<ProductoDTO>("/productos", { method: "POST", body: JSON.stringify(producto) });
+}
+```
+Termina siendo `fetch("/HelloJakarta-variante/api/productos", { method: "POST", ... })` — la
+URL que se ve en la pestaña Network del navegador. En `npm run dev` el proxy de
+`vite.config.ts` reenvía `/HelloJakarta-variante/api` hacia `http://localhost:8080`; en
+producción (WAR) ya es el mismo origen, sin proxy de por medio.
+
+**3. Backend, `rest/ProductoController.java`** — JAX-RS enruta el `POST` aquí:
+```java
+@Path(PRODUCTOS)   // PRODUCTOS = "/productos", constante en ControllerRegistry
+public class ProductoController {
+    @POST
+    public Response crear(@Valid ProductoDto dto) {
+        ProductoDto creado = productoService.crear(dto);
+        ...
+    }
+}
+```
+
+**4. Backend, `ejb/ProductoWriteServiceImpl.java`** — el Controller no toca JPA directo,
+delega al EJB de negocio:
+```java
+public ProductoDto crear(ProductoDto dto) {
+    ProductoEty creado = productoRepository.insert(productoMapper.toEntity(dto));
+    return productoMapper.toDto(creado);
+}
+```
+
+**5. Backend, `ProductoRepository`** — `CrudRepository` de Jakarta Data (ver incidente #11),
+aquí sí se ejecuta el `INSERT` real contra la tabla que mapea `ProductoEty` (id con
+`GenerationType.SEQUENCE` desde el incidente #15, por eso no hace falta ningún
+`EntityManager`/`flush()` manual en este flujo).
+
+**Patrón general, para rastrear cualquier otro endpoint** (facturas, usuarios, etc.):
+`api/client.ts` (fetch) → `rest/XController.java` (`@Path`/`@POST`/`@GET`) →
+`ejb/XWriteServiceImpl.java` o `XReadServiceImpl.java` → `XRepository` → base de datos.
