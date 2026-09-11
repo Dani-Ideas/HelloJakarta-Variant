@@ -1,6 +1,10 @@
 package org.example.ejb;
 
-import jakarta.ejb.Stateless;
+import jakarta.annotation.PostConstruct;
+import jakarta.ejb.Lock;
+import jakarta.ejb.LockType;
+import jakarta.ejb.Singleton;
+import jakarta.ejb.Startup;
 import jakarta.inject.Inject;
 import org.example.dto.SesionCajaDto;
 import org.example.lib.SesionCajaReadService;
@@ -8,9 +12,14 @@ import org.example.lib.SesionCajaRepository;
 import org.example.mapper.SesionCajaMapper;
 
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-@Stateless
+// @Singleton (ya NO @Stateless): mismo patron que Producto/Usuario -- SesionCaja no tiene
+// FK saliente (es Factura quien la referencia a ella, no al reves), asi que es "tabla base".
+// Sin @DependsOn: DatosIniciales no siembra SesionCaja.
+@Singleton
+@Startup
 public class SesionCajaReadServiceImpl implements SesionCajaReadService {
 
     @Inject
@@ -18,15 +27,36 @@ public class SesionCajaReadServiceImpl implements SesionCajaReadService {
 
     private final SesionCajaMapper sesionCajaMapper = SesionCajaMapper.INSTANCE;
 
-    @Override
-    public List<SesionCajaDto> listar() {
-        return sesionCajaRepository.findAll()
+    private final Map<Long, SesionCajaDto> cache = new ConcurrentHashMap<>();
+
+    @PostConstruct
+    private void precargarCache() {
+        sesionCajaRepository.findAll()
                 .map(sesionCajaMapper::toDto)
-                .collect(Collectors.toList());
+                .forEach(dto -> cache.put(dto.id(), dto));
     }
 
     @Override
+    @Lock(LockType.READ)
+    public List<SesionCajaDto> listar() {
+        return List.copyOf(cache.values());
+    }
+
+    @Override
+    @Lock(LockType.READ)
     public SesionCajaDto buscarPorId(Long id) {
-        return sesionCajaMapper.toDto(sesionCajaRepository.findById(id).orElse(null));
+        return cache.get(id);
+    }
+
+    @Override
+    @Lock(LockType.WRITE)
+    public void refrescarCache(SesionCajaDto dto) {
+        cache.put(dto.id(), dto);
+    }
+
+    @Override
+    @Lock(LockType.WRITE)
+    public void quitarDeCache(Long id) {
+        cache.remove(id);
     }
 }

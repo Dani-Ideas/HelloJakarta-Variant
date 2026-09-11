@@ -1,10 +1,12 @@
 package org.example.ejb;
 
+import jakarta.ejb.EJB;
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.example.dto.SesionCajaDto;
+import org.example.lib.SesionCajaReadService;
 import org.example.lib.SesionCajaRepository;
 import org.example.lib.SesionCajaWriteService;
 import org.example.mapper.SesionCajaMapper;
@@ -17,6 +19,11 @@ public class SesionCajaWriteServiceImpl implements SesionCajaWriteService {
 
     @Inject
     private SesionCajaRepository sesionCajaRepository;
+
+    // SesionCajaReadServiceImpl ahora es @Singleton con cache -- avisarle en cada
+    // escritura, mismo patron que Producto/Usuario.
+    @EJB
+    private SesionCajaReadService sesionCajaReadService;
 
     private final SesionCajaMapper sesionCajaMapper = SesionCajaMapper.INSTANCE;
 
@@ -33,6 +40,8 @@ public class SesionCajaWriteServiceImpl implements SesionCajaWriteService {
         sesion.setCerrada(false);
         SesionCajaEty creada = sesionCajaRepository.insert(sesion);
         em.flush();
-        return sesionCajaMapper.toDto(creada);
+        SesionCajaDto creadaDto = sesionCajaMapper.toDto(creada);
+        sesionCajaReadService.refrescarCache(creadaDto);
+        return creadaDto;
     }
 }

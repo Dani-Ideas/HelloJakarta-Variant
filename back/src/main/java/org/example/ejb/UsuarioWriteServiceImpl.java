@@ -1,10 +1,12 @@
 package org.example.ejb;
 
+import jakarta.ejb.EJB;
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.example.dto.UsuarioDto;
+import org.example.lib.UsuarioReadService;
 import org.example.lib.UsuarioRepository;
 import org.example.lib.UsuarioWriteService;
 import org.example.mapper.UsuarioMapper;
@@ -18,6 +20,11 @@ public class UsuarioWriteServiceImpl implements UsuarioWriteService {
     @Inject
     private UsuarioRepository usuarioRepository;
 
+    // UsuarioReadServiceImpl ahora es @Singleton con cache -- avisarle en cada escritura,
+    // mismo patron que ProductoWriteServiceImpl.
+    @EJB
+    private UsuarioReadService usuarioReadService;
+
     private final UsuarioMapper usuarioMapper = UsuarioMapper.INSTANCE;
 
     // Usuario.id usa GenerationType.IDENTITY -- UsuarioResource.crear() usa creado.id()
@@ -30,7 +37,9 @@ public class UsuarioWriteServiceImpl implements UsuarioWriteService {
     public UsuarioDto crear(UsuarioDto dto) {
         UsuarioEty creado = usuarioRepository.insert(usuarioMapper.toEntity(dto));
         em.flush();
-        return usuarioMapper.toDto(creado);
+        UsuarioDto creadoDto = usuarioMapper.toDto(creado);
+        usuarioReadService.refrescarCache(creadoDto);
+        return creadoDto;
     }
 
     @Override
@@ -42,7 +51,9 @@ public class UsuarioWriteServiceImpl implements UsuarioWriteService {
         UsuarioEty entidad = existente.get();
         entidad.setNombre(dto.nombre());
         entidad.setRol(dto.rol());
-        return usuarioMapper.toDto(usuarioRepository.update(entidad));
+        UsuarioDto actualizadoDto = usuarioMapper.toDto(usuarioRepository.update(entidad));
+        usuarioReadService.refrescarCache(actualizadoDto);
+        return actualizadoDto;
     }
 
     @Override
@@ -51,6 +62,7 @@ public class UsuarioWriteServiceImpl implements UsuarioWriteService {
             return false;
         }
         usuarioRepository.deleteById(id);
+        usuarioReadService.quitarDeCache(id);
         return true;
     }
 }

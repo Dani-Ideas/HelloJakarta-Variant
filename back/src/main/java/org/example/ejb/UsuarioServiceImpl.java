@@ -43,4 +43,15 @@ public class UsuarioServiceImpl implements UsuarioService {
     public boolean eliminar(Long id) {
         return usuarioWriteService.eliminar(id);
     }
+
+    // Delegacion hueca, igual que en ProductoServiceImpl -- el Controller nunca los llama.
+    @Override
+    public void refrescarCache(UsuarioDto dto) {
+        usuarioReadService.refrescarCache(dto);
+    }
+
+    @Override
+    public void quitarDeCache(Long id) {
+        usuarioReadService.quitarDeCache(id);
+    }
 }

@@ -33,4 +33,15 @@ public class SesionCajaServiceImpl implements SesionCajaService {
     public SesionCajaDto crear(SesionCajaDto dto) {
         return sesionCajaWriteService.crear(dto);
     }
+
+    // Delegacion hueca, igual que en ProductoServiceImpl/UsuarioServiceImpl.
+    @Override
+    public void refrescarCache(SesionCajaDto dto) {
+        sesionCajaReadService.refrescarCache(dto);
+    }
+
+    @Override
+    public void quitarDeCache(Long id) {
+        sesionCajaReadService.quitarDeCache(id);
+    }
 }
