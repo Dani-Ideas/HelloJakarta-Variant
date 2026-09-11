@@ -1106,3 +1106,87 @@ aquí sí se ejecuta el `INSERT` real contra la tabla que mapea `ProductoEty` (i
 **Patrón general, para rastrear cualquier otro endpoint** (facturas, usuarios, etc.):
 `api/client.ts` (fetch) → `rest/XController.java` (`@Path`/`@POST`/`@GET`) →
 `ejb/XWriteServiceImpl.java` o `XReadServiceImpl.java` → `XRepository` → base de datos.
+
+---
+
+## 27. Cache en memoria para las "tablas base" (Producto, Usuario, SesionCaja) vía `@Singleton`
+
+**Motivo:** patrón pedido explícitamente para practicar (existe igual en el trabajo del
+usuario): las tablas sin FK saliente ("tablas base" — no dependen de otras tablas) se
+cachean en memoria en vez de ir a la base de datos en cada `listar()`/`buscarPorId()`.
+
+**Validación previa, antes de tocar código:** se confirmó con `grep` que ninguna otra clase
+escribe `Producto`/`Usuario`/`SesionCaja` por fuera de su propio `XWriteServiceImpl` —
+`FacturaWriteServiceImpl` sí toca `ProductoRepository`, pero solo para *leer* el precio
+(nunca hace `update()`). Sin esa validación, el cache quedaría desactualizado por un camino
+de escritura que nadie invalida.
+
+**Cambios (mismo esquema repetido para las 3 entidades):**
+- `lib/XReadService.java`: dos métodos nuevos, `refrescarCache(dto)`/`quitarDeCache(id)` —
+  no son API pública (el Controller nunca los llama), solo para que el `XWriteServiceImpl`
+  correspondiente avise cuando cambia un registro.
+- `ejb/XReadServiceImpl.java`: de `@Stateless` a `@Singleton` + `@Startup` (Producto además
+  con `@DependsOn("DatosIniciales")`, la única de las 3 que ese seeder siembra). Un
+  `Map<Long, XDto>` como cache, `@PostConstruct` que lo precarga una sola vez, y
+  `@Lock(LockType.READ)`/`@Lock(LockType.WRITE)` explícitos por método — un `@Singleton`
+  sin esto pone `@Lock(WRITE)` (exclusivo) por defecto en TODOS sus métodos, lo que
+  serializaría hasta las lecturas y volvería el cache más lento que no tener cache.
+- `ejb/XWriteServiceImpl.java`: inyecta `XReadService` y llama `refrescarCache`/
+  `quitarDeCache` después de cada `crear`/`actualizar`/`patch`/`eliminar` exitoso.
+- `ejb/XServiceImpl.java` (fachada): dos métodos de delegación hueca, obligados por la
+  interfaz `XReadService`, nunca invocados desde el Controller.
+
+**Verificado con el `server.log` real de GlassFish, no solo "debería andar":** al
+desplegar, un único `SELECT ... FROM PRODUCTO/USUARIO/SESION_CAJA` de precarga por entidad.
+Después, crear un registro nuevo por API generó el `INSERT`/`CALL NEXT VALUE` de siempre,
+pero el `listar()` inmediatamente posterior **no generó ningún `SELECT` nuevo** contra esa
+tabla y aun así devolvió el registro recién creado — la única forma de que apareciera fue
+saliendo del mapa en memoria, puesto ahí por `refrescarCache()`.
+
+**Fuera de alcance a propósito:** `Factura`/`FacturaDetalle` se quedan `@Stateless`, sin
+cache — tienen FK saliente (dependen de otras tablas), y además `FacturaDetalleMapper`
+sigue resolviendo su `Producto` anidado vía *lazy-loading* normal de JPA al armar la
+respuesta (ver incidente #28) — un camino de lectura de Producto totalmente aparte de este
+cache, que no se beneficia de él.
+
+---
+
+## 28. Cómo `FacturaMapper` arma una respuesta "humana" (con joins), y cómo `FacturaDetalleMapper` resuelve un Producto solo por su id al crear
+
+**No es un incidente/bug — es una nota de referencia**, como el #26, para explicar un
+mecanismo que ya existía en el código pero no estaba documentado: cómo se arma
+automáticamente una `Factura` con todos sus datos legibles (cajero, producto por nombre,
+etc.) al leer, y cómo se resuelve del lado contrario (el cliente solo manda el `id` del
+Producto) al crear.
+
+**Lectura (Entity → DTO, "joins" sin escribir SQL a mano):** `FacturaMapper` está anotado
+`@Mapper(uses = FacturaDetalleMapper.class)`, y `FacturaDetalleMapper` a su vez
+`@Mapper(uses = ProductoMapper.class)`. Esa cadena hace que `FacturaMapper.toDto(factura)`
+dispare automáticamente `FacturaDetalleMapper.toDto()` por cada línea, que a su vez dispara
+`ProductoMapper.toDto()` para el producto de esa línea — el resultado final ya trae nombre,
+sku, precio del producto anidados, no solo el id.
+
+**Importante — quién hace el SELECT de verdad no es el mapper:** MapStruct solo convierte
+objetos Java ya en memoria, nunca toca la base de datos. Lo que realmente dispara el SQL es
+que `producto`/`detalles` son relaciones JPA (`@ManyToOne(fetch = LAZY)` en
+`FacturaDetalleEty`/`FacturaEty`) — cuando el mapper generado llama
+`detalle.getProducto()`, ese getter en realidad es un proxy de JPA: si el Producto no
+estaba cargado todavía, ahí mismo dispara el `SELECT` real contra la base. El mapper solo
+decide *cuándo* se navega la relación; JPA decide *cómo* traerla.
+
+**Escritura (DTO → Entity, el cliente solo manda el id):** `FacturaDetalleMapper.toEntity()`
+usa `@Mapping(target = "producto", qualifiedByName = "referenciaProducto")` en vez de
+reusar `ProductoMapper.toEntity()` — a propósito, porque son dos casos opuestos:
+`ProductoMapper.toEntity()` ignora el id (sirve para crear un Producto **nuevo**);
+`referenciaProducto()` hace lo contrario, copia **solo** el id y deja todo lo demás null
+(sirve para **referenciar** un Producto que ya existe, ej.
+`{"producto": {"id": 1}, "cantidad": 2}`).
+
+Ese `ProductoEty` que arma `referenciaProducto()` es un objeto "a medias" (solo trae el
+id) — no se usa directo para guardar. `FacturaWriteServiceImpl.crear()` lo pisa por
+completo: vuelve a buscar el Producto real por ese id
+(`productoRepository.findById(detalle.getProducto().getId())`) y de ahí saca el precio
+actual del servidor, nunca el que mandó el cliente — protección de negocio explícita
+("el precio SIEMPRE se recalcula del lado del servidor", comentario ya existente en esa
+clase). El mapper solo resuelve la *forma* del objeto; la *fuente de la verdad* del precio
+la decide el service.
