@@ -51,4 +51,18 @@ public class ProductoServiceImpl implements ProductoService {
     public boolean eliminar(Long id) {
         return productoWriteService.eliminar(id);
     }
+
+    // Delegacion "hueca" a proposito: el Controller nunca llama estos dos (no son parte de
+    // la API HTTP), pero como se agregaron a la interfaz ProductoReadService, esta fachada
+    // (que implementa ProductoService = ProductoReadService + ProductoWriteService) tiene
+    // que implementarlos igual que el resto.
+    @Override
+    public void refrescarCache(ProductoDto dto) {
+        productoReadService.refrescarCache(dto);
+    }
+
+    @Override
+    public void quitarDeCache(Long id) {
+        productoReadService.quitarDeCache(id);
+    }
 }

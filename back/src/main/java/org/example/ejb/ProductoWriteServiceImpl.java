@@ -1,9 +1,11 @@
 package org.example.ejb;
 
+import jakarta.ejb.EJB;
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
 import org.example.dto.ProductoDto;
 import org.example.dto.ProductoPatchDto;
+import org.example.lib.ProductoReadService;
 import org.example.lib.ProductoRepository;
 import org.example.lib.ProductoWriteService;
 import org.example.mapper.ProductoMapper;
@@ -18,13 +20,21 @@ public class ProductoWriteServiceImpl implements ProductoWriteService {
     @Inject
     private ProductoRepository productoRepository;
 
+    // ProductoReadServiceImpl ahora es @Singleton con cache en memoria (ver esa clase) --
+    // cada metodo de aqui abajo que cambia la base de datos tiene que avisarle, si no el
+    // cache se queda con datos viejos indefinidamente (nadie mas lo refresca solo).
+    @EJB
+    private ProductoReadService productoReadService;
+
     private final ProductoMapper productoMapper = ProductoMapper.INSTANCE;
 
     @Override
     public ProductoDto crear(ProductoDto dto) {
         // Sin EntityManager/flush(): Producto.id usa SEQUENCE, no IDENTITY.
         ProductoEty creado = productoRepository.insert(productoMapper.toEntity(dto));
-        return productoMapper.toDto(creado);
+        ProductoDto creadoDto = productoMapper.toDto(creado);
+        productoReadService.refrescarCache(creadoDto);
+        return creadoDto;
     }
 
     @Override
@@ -38,7 +48,9 @@ public class ProductoWriteServiceImpl implements ProductoWriteService {
         entidad.setSku(dto.sku());
         entidad.setPrecio(dto.precio());
         entidad.setStock(dto.stock());
-        return productoMapper.toDto(productoRepository.update(entidad));
+        ProductoDto actualizadoDto = productoMapper.toDto(productoRepository.update(entidad));
+        productoReadService.refrescarCache(actualizadoDto);
+        return actualizadoDto;
     }
 
     @Override
@@ -60,7 +72,9 @@ public class ProductoWriteServiceImpl implements ProductoWriteService {
         if (cambios.stock() != null) {
             entidad.setStock(cambios.stock());
         }
-        return productoMapper.toDto(productoRepository.update(entidad));
+        ProductoDto actualizadoDto = productoMapper.toDto(productoRepository.update(entidad));
+        productoReadService.refrescarCache(actualizadoDto);
+        return actualizadoDto;
     }
 
     @Override
@@ -70,6 +84,7 @@ public class ProductoWriteServiceImpl implements ProductoWriteService {
             return false;
         }
         productoRepository.deleteById(id);
+        productoReadService.quitarDeCache(id);
         return true;
     }
 }
